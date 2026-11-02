@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Claude Code through the local Anthropic proxy.
+# Usage: ./claude-local.sh [claude args...]
+export ANTHROPIC_BASE_URL="http://127.0.0.1:{{PROXY_PORT}}"
+export ANTHROPIC_API_KEY="anything"
+export ANTHROPIC_AUTH_TOKEN="anything"
+export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY="1"
+exec claude --model "{{CLAUDE_MODEL_ID}}" "$@"

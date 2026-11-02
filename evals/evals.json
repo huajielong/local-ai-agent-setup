@@ -1,0 +1,29 @@
+{
+  "skill_name": "local-ai-agent-setup",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我朋友的 Windows 笔记本是 RTX 4060 8GB 显存、32GB 内存、1TB 硬盘，想本地跑 Claude Code 和翻译，应该装什么模型、用什么推理后端？请先给方案，不要直接下载。",
+      "expected_output": "Hardware report, Tier C/D, Gemma 4 12B / Qwen3.5-9B or 4B, no 35B as primary, Ollama or llama.cpp, translation model, download sizes, confirmation before downloads; if a 30B/35B-A3B is mentioned, flag it as borderline on 8GB + 32GB.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "MacBook Pro M3 Pro 18GB 统一内存，想搭本地 AI 通用智能体，能跑什么模型？用 Ollama、MLX 还是 LM Studio？",
+      "expected_output": "Apple Silicon unified-memory tier, Gemma 4 12B / Qwen3.5-9B, 35B not practical on 18GB, Ollama/MLX/LM Studio recommendation, Claude Code bridge caveats.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Linux 服务器双 RTX 4090（共 48GB 显存）、128GB 内存，想给团队搭本地通用智能体和 Claude Code 代理，怎么选型和部署？",
+      "expected_output": "Tier S, Qwen3.8-27B or Qwen3.6-35B-A3B full GPU, a team-appropriate serving stack (vLLM/SGLang or llama.cpp with a concurrency explanation), Anthropic proxy or LiteLLM, 32K context, team/security considerations, download plan.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "帮我清理一下 C 盘，把下载文件夹里的大文件找出来删掉。",
+      "expected_output": "This is a disk cleanup task, not a local AI setup task; the skill should not trigger.",
+      "files": []
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+@echo off
+chcp 65001 >nul
+set "ANTHROPIC_BASE_URL=http://127.0.0.1:{{PROXY_PORT}}"
+set "ANTHROPIC_API_KEY=anything"
+set "ANTHROPIC_AUTH_TOKEN=anything"
+set "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1"
+claude --model {{CLAUDE_MODEL_ID}} %*

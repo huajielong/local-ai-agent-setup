@@ -1,0 +1,58 @@
+[
+  {
+    "query": "我有一台 RTX 4090，想给团队搭本地 vLLM 推理服务，怎么选模型？",
+    "should_trigger": true
+  },
+  {
+    "query": "怎么用 LiteLLM 把本地模型接到 Claude Code？",
+    "should_trigger": true
+  },
+  {
+    "query": "MacBook M3 Pro 18GB 能跑什么本地大模型？",
+    "should_trigger": true
+  },
+  {
+    "query": "帮我把 Ollama 的模型目录移到 D 盘，并把上下文设成 32K。",
+    "should_trigger": true
+  },
+  {
+    "query": "本地部署一个离线 AI 智能体，要求能调用工具。",
+    "should_trigger": true
+  },
+  {
+    "query": "双 4090 服务器，团队多人用 Claude Code，推荐 llama.cpp 还是 vLLM？",
+    "should_trigger": true
+  },
+  {
+    "query": "我电脑只有 32GB 内存、没有独显，能跑本地模型吗？",
+    "should_trigger": true
+  },
+  {
+    "query": "怎么把这个本地模型部署方案做成给别人的安装包？",
+    "should_trigger": true
+  },
+  {
+    "query": "帮我清理 C 盘下载文件夹里的大文件。",
+    "should_trigger": false
+  },
+  {
+    "query": "写一个 Python 快速排序。",
+    "should_trigger": false
+  },
+  {
+    "query": "Claude API 的 prompt caching 怎么用？",
+    "should_trigger": false
+  },
+  {
+    "query": "推荐一个在线翻译网站。",
+    "should_trigger": false
+  },
+  {
+    "query": "如何用 React 做一个仪表盘？",
+    "should_trigger": false
+  },
+  {
+    "query": "帮我总结这份 PDF 的内容。",
+    "should_trigger": false
+  }
+]
