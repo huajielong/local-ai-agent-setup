@@ -1,17 +1,28 @@
+<div align="center">
+
 # local-ai-agent-setup
+
+**先读硬件，再选模型，最后才谈参数。**
 
 一个面向 [Claude Code](https://claude.com/claude-code) 的跨平台技能：检测本机硬件，选择真正能跑起来的本地模型与推理后端，生成 `claude-local` 接入，并在下载/安装前给出可确认的部署方案。
 
 A cross-platform Claude Code skill that detects your hardware, picks a local LLM stack you can actually run, generates a `claude-local` wrapper, and produces a confirmation-gated setup plan.
 
-> **v0.3.0 · 2026-11-06 · 活跃维护**  
-> 这不是 Anthropic 官方项目。  
-> 本地 skill-evaluator 评估：**91/100，安全门禁通过**（本地主观评估，非官方认证；报告见 [`evals/skill-evaluator-2026-11-06.md`](evals/skill-evaluator-2026-11-06.md)）。  
-> 版本变更见 [`CHANGELOG.md`](CHANGELOG.md)。
+[![Version](https://img.shields.io/badge/version-0.3.0-blue?style=flat-square)](https://github.com/huajielong/local-ai-agent-setup/releases/tag/v0.3.0)
+[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey?style=flat-square)](#模型选择与平台)
+
+[它解决什么问题](#它解决什么问题) • [适合谁](#适合谁) • [安装](#安装) • [快速开始](#快速开始) • [模型选择](#模型选择与平台) • [性能调优](#性能调优) • [评测](#评测与验证)
+
+</div>
+
+> **状态：活跃维护** · v0.3.0 · 2026-11-06 · 这不是 Anthropic 官方项目。
 
 ## 它解决什么问题
 
-本地模型教程常常从“下载 30B 模型”开始，却不问显存、内存、磁盘、用途和供电模式。这个技能先读取硬件，再按档位和用途选型：
+本地模型教程常常从“下载 30B 模型”开始，却不问显存、内存、磁盘、用途和供电模式。结果是要么跑不起来，要么能跑但慢到没法用。
+
+这个技能反过来：先读硬件，再按档位和用途选型，最后才谈模型参数。
 
 - **8GB 显存**：9B/12B dense Q4，明确不承诺 35B；提到 30B/35B-A3B 时会说明它只是实验方案。
 - **12GB 显存 + 64GB 内存**：Qwen3.6-35B-A3B 通过 llama.cpp `--n-cpu-moe` 把专家放内存；可跑 Claude Code。
@@ -19,32 +30,11 @@ A cross-platform Claude Code skill that detects your hardware, picks a local LLM
 - **Apple Silicon**：Ollama/MLX/LM Studio，按统一内存选 9B/12B/35B-A3B。
 - **无 GPU**：1–4B CPU 模型，明确能力边界，不承诺 Claude-Code 级 agent。
 
-## 适合 / 不适合
+## 适合谁
 
 **适合**：有本地 GPU / Apple Silicon，想用 Claude Code 接本地模型；需要在多台电脑、不同显卡或工作站上复用同一套检测/选型/调优流程；需要团队本地推理方案。
 
 **不适合**：只想用云端 API；做 CUDA/ROCm 内核开发；纯提示词工程；不愿意在下载/安装前确认。
-
-## 核心能力
-
-- **只读硬件检测**：Windows PowerShell / macOS-Linux bash 脚本，读取 OS、CPU、RAM、磁盘、GPU/VRAM、已装工具和 Ollama 模型。
-- **模型矩阵**：Qwen3.6-35B-A3B、Qwen3.8-27B、Gemma 4 12B/26B-A4B、TranslateGemma 4B、Qwen3.5-9B/4B、gpt-oss:20b 等，含大小、许可证、适用档位和预期速度。
-- **后端选择**：Ollama、llama.cpp、LM Studio、MLX、vLLM、SGLang；单用户和团队并发有明确分支。
-- **Claude Code 接入**：Ollama 原生 Anthropic API、llama.cpp + anthropic-proxy、vLLM/SGLang + LiteLLM；生成 `claude-local` 包装脚本，用 `--settings` 隔离配置，不修改正常 `claude`。
-- **多模型入口**：按 Ollama 已安装模型生成 `claude-local-<name>`，单 GPU 单模型常驻切换，管理命令 `claude-local-models -List/-Refresh/-Stop/-Switch`。
-- **性能调优**：电源/厂商模式、offload、CPU 亲和性、量化/上下文；完整清单见 [`references/performance-tuning.md`](references/performance-tuning.md)。
-- **团队/多用户/工作站**：vLLM/SGLang 连续批处理、Tensor Parallel、LiteLLM 虚拟密钥/配额/审计、SSH 隧道/VPN、仅绑 `127.0.0.1`。
-- **安全门控**：下载/安装前必须确认；服务只绑 localhost；不默认 `--dangerously-skip-permissions`；尊重模型许可证，不打包权重。
-
-## 工作流
-
-1. **检测硬件**：只读脚本读取 OS/CPU/RAM/磁盘/GPU/工具。
-2. **分类**：按 VRAM、RAM、用途、单用户/团队分档。
-3. **选模型和后端**：质量、显存、速度、工具调用、上下文、许可证综合权衡。
-4. **接入 Claude Code**：生成 `claude-local`、独立 settings、必要时启动 llama.cpp + anthropic-proxy。
-5. **出方案并确认**：下载/安装前给出模型、后端、显存预算、速度和风险。
-6. **执行并验证**：健康检查、真实请求、工具调用、普通 `claude` 不受影响。
-7. **调优**：电源/厂商模式 → offload → CPU 亲和性 → 量化/上下文 → 至少 3 次基准。
 
 ## 安装
 
@@ -68,6 +58,9 @@ git clone https://github.com/huajielong/local-ai-agent-setup.git `
 
 从 [v0.3.0 Release](https://github.com/huajielong/local-ai-agent-setup/releases/tag/v0.3.0) 下载 `local-ai-agent-setup-v0.3.0.skill`，按 Claude Code 的技能安装方式导入。
 
+> [!IMPORTANT]
+> 如果 `~/.claude/settings.json` 的 `env` 已指向在线模型（例如 DeepSeek），shell 里的 `ANTHROPIC_BASE_URL` 会被覆盖。技能会生成独立 settings 文件并用 `claude --settings` 启动，不要只 `export`。
+
 安装后在 Claude Code 里直接说：
 
 - “我的电脑能跑什么本地大模型？”
@@ -79,7 +72,7 @@ git clone https://github.com/huajielong/local-ai-agent-setup.git `
 
 技能应自动触发；如果没有，确认技能目录在 `~/.claude/skills/` 下，并重启 Claude Code。
 
-## 使用 `claude-local`
+## 快速开始
 
 生成后的入口通常长这样（具体名称取决于本机安装的 Ollama 模型）：
 
@@ -106,6 +99,27 @@ Active: qwen3.6:35b-a3b-mtp-q4_K_M (llama PID 31356, proxy PID 38696)
 - `claude-local` 通过独立 `--settings` 指向本地代理，不会把全局配置改掉。
 - 12GB 显存一次只常驻一个模型；启动另一个入口会停掉之前的 llama-server/proxy。
 - 有活跃本地会话时，切换默认中止；先执行 `claude-local-models -Switch <tag> -Force` 强制切换，再运行目标入口。
+
+## 核心能力
+
+- **只读硬件检测**：Windows PowerShell / macOS-Linux bash 脚本，读取 OS、CPU、RAM、磁盘、GPU/VRAM、已装工具和 Ollama 模型。
+- **模型矩阵**：Qwen3.6-35B-A3B、Qwen3.8-27B、Gemma 4 12B/26B-A4B、TranslateGemma 4B、Qwen3.5-9B/4B、gpt-oss:20b 等，含大小、许可证、适用档位和预期速度。
+- **后端选择**：Ollama、llama.cpp、LM Studio、MLX、vLLM、SGLang；单用户和团队并发有明确分支。
+- **Claude Code 接入**：Ollama 原生 Anthropic API、llama.cpp + anthropic-proxy、vLLM/SGLang + LiteLLM；生成 `claude-local` 包装脚本，用 `--settings` 隔离配置，不修改正常 `claude`。
+- **多模型入口**：按 Ollama 已安装模型生成 `claude-local-<name>`，单 GPU 单模型常驻切换，管理命令 `claude-local-models -List/-Refresh/-Stop/-Switch`。
+- **性能调优**：电源/厂商模式、offload、CPU 亲和性、量化/上下文；完整清单见 [`references/performance-tuning.md`](references/performance-tuning.md)。
+- **团队/多用户/工作站**：vLLM/SGLang 连续批处理、Tensor Parallel、LiteLLM 虚拟密钥/配额/审计、SSH 隧道/VPN、仅绑 `127.0.0.1`。
+- **安全门控**：下载/安装前必须确认；服务只绑 localhost；不默认 `--dangerously-skip-permissions`；尊重模型许可证，不打包权重。
+
+## 工作流
+
+1. **检测硬件**：只读脚本读取 OS/CPU/RAM/磁盘/GPU/工具。
+2. **分类**：按 VRAM、RAM、用途、单用户/团队分档。
+3. **选模型和后端**：质量、显存、速度、工具调用、上下文、许可证综合权衡。
+4. **接入 Claude Code**：生成 `claude-local`、独立 settings、必要时启动 llama.cpp + anthropic-proxy。
+5. **出方案并确认**：下载/安装前给出模型、后端、显存预算、速度和风险。
+6. **执行并验证**：健康检查、真实请求、工具调用、普通 `claude` 不受影响。
+7. **调优**：电源/厂商模式 → offload → CPU 亲和性 → 量化/上下文 → 至少 3 次基准。
 
 ## 模型选择与平台
 
@@ -164,14 +178,16 @@ Active: qwen3.6:35b-a3b-mtp-q4_K_M (llama PID 31356, proxy PID 38696)
 
 本地 skill-evaluator 评估（2026-11-06）：**91/100，安全门禁通过**。评分维度和报告见 [`evals/skill-evaluator-2026-11-06.md`](evals/skill-evaluator-2026-11-06.md)。这是本地主观评估，不是官方认证。
 
-说明：评测使用特定机器和模型，结果只代表方向性，不构成对任意硬件的承诺。
+## 安全提示
 
-## 安全、贡献与许可证
+> [!WARNING]
+> 本地推理不等于 Claude Code 完全离线：更新、遥测、web search 等仍可能联网。模型服务和代理默认只绑 `127.0.0.1`，不要改成 `0.0.0.0`，除非你明确需要局域网访问并理解风险。
 
 - 检测脚本只读，不修改系统；下载/安装前必须明确确认，默认只给方案。
-- 模型服务和代理默认只绑 `127.0.0.1`；不包含模型权重；模板中的 `API_KEY=dummy` 是占位值。
-- 本地推理不等于 Claude Code 完全离线：更新、遥测、web search 等仍可能联网。完整说明见 [`references/safety-licenses.md`](references/safety-licenses.md)。
+- 不包含模型权重；模型从官方来源下载，许可证由使用者自行接受。
+- 模板中的 `API_KEY=dummy` 是占位值；仓库不包含真实 API Key 或个人路径。
+- 完整说明见 [`references/safety-licenses.md`](references/safety-licenses.md)。
 
-欢迎 issue / PR：新模型和量化标签（请附官方来源）、新 GPU/OS 的检测结果、后端兼容性和性能调优数据（请注明硬件、电源模式、上下文和测试方法）。仓库结构和提交前检查见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
+---
 
-许可证：[MIT](LICENSE)。
+MIT licensed · [LICENSE](LICENSE) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
