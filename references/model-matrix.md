@@ -2,13 +2,15 @@
 
 Model landscape changes quickly. Treat tags/sizes as a starting point and verify with `ollama show <tag>` or the official model card before recommending.
 
+Measured tok/s are per-machine examples. Tune vendor/OS power mode, backend offload, `-t`/affinity, context, and quant for each machine; do not copy numbers or flags across GPUs/CPUs. For multi-GPU workstations, sum VRAM for tensor parallel and measure concurrent throughput, not single-stream speed.
+
 ## 1. Hardware tiers
 
 | Tier | Hardware | Primary model | Backend | Expected experience |
 |---|---|---|---|---|
 | S | NVIDIA ≥24GB VRAM, ≥64GB RAM | Qwen3.8-27B dense Q4 (~17.7GB); Qwen3.6-35B-A3B Q4 (22GB) | llama.cpp full GPU | Strong coding/agent; ~30–70 tok/s depending on model/GPU |
 | A | NVIDIA 16–23GB VRAM, ≥64GB RAM | Qwen3.6-35B-A3B Q4 with partial offload; Gemma 4 26B-A4B Q4 (~16GB) | llama.cpp | Good agent; speed depends on offload |
-| B | NVIDIA 12–15GB VRAM, ≥64GB RAM | Qwen3.6-35B-A3B Q4 via `--n-cpu-moe 24`; Gemma 4 12B Q4 | llama.cpp | Qwen ~65 tok/s measured on 5070 Ti 12GB; Gemma ~34 |
+| B | NVIDIA 12–15GB VRAM, ≥64GB RAM | Qwen3.6-35B-A3B Q4 via `--n-cpu-moe 24`; Gemma 4 12B Q4 | llama.cpp | Qwen ~60–100 tok/s in vendor Performance mode (~18–30 in Quiet) measured on 5070 Ti 12GB + i7-14650HX; `-t 8` + P-core affinity; prompt ~1258 tok/s; Gemma ~34 |
 | C | NVIDIA 8–11GB VRAM, ≥32GB RAM | Gemma 4 12B Q4 (8GB); Qwen3.5-9B Q4 (~6GB) | llama.cpp / Ollama | Gemma may be tight at 32K; no 35B |
 | D | 4–7GB VRAM or 16GB RAM | Qwen3.5-4B (~3GB); Gemma 4 E4B; TranslateGemma 4B | Ollama / llama.cpp | Small chat/translation; weak agent |
 | E | CPU-only / <4GB VRAM | Qwen3.5-0.8B/2B/4B; TranslateGemma 4B CPU | Ollama CPU | Translation/Q&A only; no Claude-Code-class agent |
@@ -59,10 +61,17 @@ Model landscape changes quickly. Treat tags/sizes as a starting point and verify
 
 | Model | 12GB + 64GB (llama.cpp) | 12GB Ollama | Notes |
 |---|---|---|---|
-| Qwen3.6-35B-A3B Q4 | ~65 tok/s (n-cpu-moe 24, MTP) | ~6.6 tok/s | Ollama lacks MoE expert offload |
+| Qwen3.6-35B-A3B Q4 | ~60–100 tok/s Performance / ~18–30 Quiet (n-cpu-moe 24, MTP, `-t 8` + P-core affinity) | ~6.6 tok/s | Ollama lacks MoE expert offload; vendor Quiet mode caps CPU/GPU |
 | Gemma 4 12B Q4 | ~34 tok/s full GPU | ~5 tok/s | llama.cpp much faster |
 | TranslateGemma 4B | ~78 tok/s GPU / ~22 CPU | ~70–80 GPU | CPU variant 0 VRAM |
 | Qwen3.8-27B Q4 | ~5–8 tok/s (12GB offload) | ~5 tok/s | 24GB full GPU is much faster |
+
+## Measuring speed
+
+- Report generation and prompt processing separately.
+- Use at least 3 runs and ≥250 generated tokens; quote the median or sustained range, not a single sample.
+- Record MTP acceptance (`draft_n_accepted / draft_n`), GPU power/clocks/P-state, and CPU utilization. On a 12GB card running a 22GB MoE model, `--n-cpu-moe` makes the CPU the likely bottleneck even when the GPU shows low utilization.
+- A short 128-token prompt can be faster than sustained output; on the 5070 Ti laptop, Performance mode gave 77–104 tok/s on a quicksort prompt vs 61–67 on a ~300-character creative prompt, while Quiet mode gave 18–30. Do not publish a single peak as the expected speed.
 
 Always measure on the target machine; laptop thermals/power modes can cut speeds substantially.
 

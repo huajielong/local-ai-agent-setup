@@ -90,7 +90,7 @@ Get-CimInstance Win32_VideoController | ForEach-Object {
 $result.GPUs = $gpus
 
 # --- Tools ---
-$toolNames = @("ollama", "claude", "node", "npm", "python", "lms", "llama-server")
+$toolNames = @("ollama", "claude", "node", "npm", "python", "lms", "llama-server", "vllm", "sglang", "litellm", "mlx_lm.generate", "docker")
 $tools = [ordered]@{}
 foreach ($t in $toolNames) {
     $cmd = Get-Command $t -ErrorAction SilentlyContinue

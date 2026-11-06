@@ -73,7 +73,7 @@ fi
 
 echo ""
 echo "=== Tools ==="
-for t in ollama claude node npm python3 lms llama-server; do
+for t in ollama claude node npm python3 lms llama-server vllm sglang litellm mlx_lm.generate docker; do
     p="$(command -v "$t" 2>/dev/null || true)"
     if [ -n "$p" ]; then
         echo "$t: $p"

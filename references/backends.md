@@ -100,6 +100,8 @@ python -m sglang.launch_server --model-path <model> --tp 2 --port 8000 \
 
 ## 6. Proxy options for Claude Code
 
+Before using the client snippets below, read `claude-code-integration.md` §0. If any Claude Code settings file defines an `env` block, shell environment variables are ignored; launch with `claude --settings <dedicated.json>` instead.
+
 ### 6.1 Ollama native Anthropic API (simple)
 
 - Ollama ≥0.14 exposes `/v1/messages`.

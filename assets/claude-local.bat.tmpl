@@ -1,7 +1,6 @@
 @echo off
 chcp 65001 >nul
-set "ANTHROPIC_BASE_URL=http://127.0.0.1:{{PROXY_PORT}}"
-set "ANTHROPIC_API_KEY=anything"
-set "ANTHROPIC_AUTH_TOKEN=anything"
-set "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1"
-claude --model {{CLAUDE_MODEL_ID}} %*
+rem Save this file with CRLF line endings; cmd.exe misparses LF-only batch files.
+rem --settings overrides the env block in the user's settings.json for this invocation only.
+rem Shell set commands lose to settings.json, so do not rely on them for local routing.
+claude --settings "{{SETTINGS_PATH}}" --model {{CLAUDE_MODEL_ID}} %*

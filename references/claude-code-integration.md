@@ -2,6 +2,53 @@
 
 Claude Code speaks the Anthropic Messages API. Local servers usually speak OpenAI Chat Completions. There are three ways to bridge them: Ollama's native API for small models, anthropic-proxy for one user on llama.cpp, and LiteLLM in front of a batched server for a team.
 
+## 0. Preflight: settings files beat shell environment variables
+
+Before writing a wrapper, read the user's Claude Code settings:
+
+- `~/.claude/settings.json` (user)
+- `<project>/.claude/settings.json` (project)
+- `~/.claude/settings.local.json` (local overrides)
+
+If any of them contains an `env` block with `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, or `ANTHROPIC_DEFAULT_*_MODEL`, then **shell environment variables will not override those values**. A wrapper that only does `export`/`set` still sends requests to the provider configured in the settings file, and the user sees "it is still using the online model".
+
+Diagnose with one request: run `claude --model <local-only-id> -p "hi"`. If the online API rejects the model ID, or `/status` still shows the online base URL, the shell values were ignored.
+
+Fix: put the local routing in a dedicated JSON file and pass it with `--settings`, which has higher precedence than the user settings file and applies only to that invocation:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8787",
+    "ANTHROPIC_API_KEY": "anything",
+    "ANTHROPIC_AUTH_TOKEN": "anything",
+    "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-sonnet-4-6",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "claude-sonnet-4-6",
+    "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "100000",
+    "API_TIMEOUT_MS": "900000"
+  }
+}
+```
+
+```bat
+claude --settings "C:\path\claude-local.settings.json" --model claude-sonnet-4-6 %*
+```
+
+```bash
+claude --settings "/path/claude-local.settings.json" --model claude-sonnet-4-6 "$@"
+```
+
+Rules:
+
+- Override every `ANTHROPIC_DEFAULT_*_MODEL` and `CLAUDE_CODE_SUBAGENT_MODEL` that the user's settings define; otherwise background tasks and subagents keep using the online model IDs.
+- Override `CLAUDE_CODE_AUTO_COMPACT_WINDOW` if the user's settings define it. Claude Code clamps values below 100000; a value copied from a 1M-context online model will never trigger compaction on a 32K local model, so long sessions overflow.
+- `API_TIMEOUT_MS=900000` accommodates slow first-token latency from local prompt processing.
+- The dedicated file is not written back; normal `claude` keeps using its original provider.
+
 ## 1. Simple mode: Ollama native Anthropic API
 
 Use when the user wants the least setup, or the model is small enough that Ollama's speed is acceptable.
@@ -25,6 +72,7 @@ claude --model qwen3.6:35b-a3b-mtp-q4_K_M %*
 
 Rules:
 - Ollama must be >=0.14 for `/v1/messages`.
+- If §0 found a conflicting `env` block in a settings file, the `export`/`set` examples above are ignored; use `claude --settings <dedicated.json>` there too.
 - Do **not** append `/v1` to `ANTHROPIC_BASE_URL`; Claude Code appends `/v1/messages` itself.
 - Set a context of at least 32K (`OLLAMA_CONTEXT_LENGTH=32768`); 4K is unusable for Claude Code.
 - Big models in Ollama can be very slow (no MoE expert offload); this mode is best for small/medium models.
@@ -56,6 +104,12 @@ llama-server -m <model.gguf> \
 ANTHROPIC_PROXY_UPSTREAM_URL=http://127.0.0.1:8081/v1/chat/completions
 ANTHROPIC_PROXY_UPSTREAM_API_KEY=dummy
 ANTHROPIC_PROXY_DEFAULT_MODEL=qwen
+ANTHROPIC_PROXY_DEFAULT_SONNET_MODEL=qwen
+ANTHROPIC_PROXY_DEFAULT_OPUS_MODEL=qwen
+ANTHROPIC_PROXY_DEFAULT_HAIKU_MODEL=qwen
+ANTHROPIC_PROXY_DEFAULT_SONNET_MODEL_NAME=Qwen3.6-35B-A3B (local)
+ANTHROPIC_PROXY_DEFAULT_OPUS_MODEL_NAME=Qwen3.6-35B-A3B (local)
+ANTHROPIC_PROXY_DEFAULT_HAIKU_MODEL_NAME=Qwen3.6-35B-A3B (local)
 ANTHROPIC_PROXY_TOOL_FORMAT=native
 ANTHROPIC_PROXY_FORCE_MODEL=1
 ANTHROPIC_PROXY_LISTEN_ADDR=127.0.0.1:8787
@@ -65,12 +119,27 @@ ANTHROPIC_PROXY_LOG_LEVEL=info
 
 - `UPSTREAM_API_KEY` is required by the proxy even when the local server does not check it; use `dummy`.
 - `TOOL_FORMAT=native` for native tool calling; `xml` fallback if tool calls fail.
+- To make Claude Code display the local model instead of a built-in Claude label, set the visible `DEFAULT_SONNET/OPUS/HAIKU_MODEL` IDs to the exact backend model name (for example the Ollama tag `qwen3.6:35b-a3b-mtp-q4_K_M`) and `..._MODEL_NAME` to the label to display — a human-readable name (`Qwen3.6-35B-A3B`) or the exact backend name if the user wants the full name shown — then launch with `--model <that-id>`. With all three IDs equal, `/v1/models` returns a single entry. With built-in IDs such as `claude-sonnet-4-6`, Claude Code always renders "Sonnet 4.6" even though the request is local.
+- Three names are in play: the client-visible model ID (what Claude Code sends and displays), the `/v1/models` `display_name`, and the upstream model (`ANTHROPIC_PROXY_DEFAULT_MODEL` / llama.cpp `-a`). `FORCE_MODEL=1` maps any client ID to the upstream model, so the upstream alias can stay `qwen` while the client sees the Ollama tag. Model IDs containing `:` (Ollama tags) are accepted.
+- Restart the proxy after editing `.env`; `/v1/models` reflects the new IDs and display names.
 - Start from the directory containing `.env`.
 - Verify `http://127.0.0.1:8787/health` returns ok.
 
 ### 2.3 Start Claude Code through the proxy
 
-Windows `.bat`:
+Preferred — dedicated settings file plus `--settings`. This works even when the user's `~/.claude/settings.json` already routes `claude` to an online provider (see §0):
+
+```bat
+claude --settings "C:\path\claude-local.settings.json" --model claude-sonnet-4-6 %*
+```
+
+```bash
+claude --settings "/path/claude-local.settings.json" --model claude-sonnet-4-6 "$@"
+```
+
+Use `assets/claude-local.settings.json.tmpl` as the starting point.
+
+Plain environment variables work **only if** no settings file defines a conflicting `env` block:
 
 ```bat
 @echo off
@@ -82,8 +151,6 @@ set "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1"
 claude --model claude-sonnet-4-6 %*
 ```
 
-Unix:
-
 ```bash
 ANTHROPIC_BASE_URL=http://127.0.0.1:8787 \
 ANTHROPIC_API_KEY=anything \
@@ -94,36 +161,41 @@ claude --model claude-sonnet-4-6
 
 - `/v1/models` advertises Claude-style IDs; `FORCE_MODEL=1` maps them to the local model.
 - `claude-sonnet-4-6` is a safe model ID to use with this proxy; the local model still does the work.
-- Keep the normal `claude` command untouched by using a wrapper or a shell function with scoped env vars.
+- Keep the normal `claude` command untouched. `--settings` applies only to that invocation.
 
 ## 3. Wrapper patterns
+
+Use a dedicated settings file; it scopes the override to the invocation and survives an existing online-provider configuration.
 
 ### Bash/zsh alias
 
 ```bash
-alias claude-local='ANTHROPIC_BASE_URL=http://127.0.0.1:8787 ANTHROPIC_API_KEY=anything ANTHROPIC_AUTH_TOKEN=anything CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1 claude --model claude-sonnet-4-6'
+alias claude-local='claude --settings "$HOME/.claude/claude-local.settings.json" --model claude-sonnet-4-6'
 ```
 
-### PowerShell function (save/restore env)
+### PowerShell function
 
 ```powershell
 function claude-local {
-    $oldToken = $env:ANTHROPIC_AUTH_TOKEN
-    $oldKey   = $env:ANTHROPIC_API_KEY
-    $oldUrl   = $env:ANTHROPIC_BASE_URL
-    $env:ANTHROPIC_AUTH_TOKEN = "anything"
-    $env:ANTHROPIC_API_KEY    = "anything"
-    $env:ANTHROPIC_BASE_URL   = "http://127.0.0.1:8787"
-    try { claude --model claude-sonnet-4-6 @args }
-    finally {
-        $env:ANTHROPIC_AUTH_TOKEN = $oldToken
-        $env:ANTHROPIC_API_KEY    = $oldKey
-        $env:ANTHROPIC_BASE_URL   = $oldUrl
-    }
+    claude --settings "$env:USERPROFILE\.claude\claude-local.settings.json" --model claude-sonnet-4-6 @args
 }
 ```
 
-Do not use a PowerShell function that sets `$env:` without restoring it; the variables persist in the session and the normal `claude` will silently use the local proxy.
+If no settings file exists and no `env` block is configured, an environment-scoped wrapper also works. Never mutate `$env:` without restoring it; the variables persist in the session and normal `claude` will silently use the local proxy.
+
+### 3.1 Multiple local models on one GPU
+
+When several Ollama models are installed, generate a registry and one wrapper per model instead of hand-editing ports:
+
+- Scan `GET http://127.0.0.1:11434/api/tags`; resolve each model's GGUF/mmproj/draft from the Ollama manifest by layer mediaType (`application/vnd.ollama.image.model`, `.projector`, `.draft`). Do not infer the projector from FROM order.
+- Write a registry (tag, command, blobs, profile, capabilities) and per-model settings JSON.
+- Generate `claude-local-<slug>` wrappers. The wrapper runs the dispatcher with `-Prepare`, then `claude --settings <per-model-settings> --model <full-tag> %*`; keep the final call in the `.cmd` so `-p`, `--resume`, `--version` pass through unchanged.
+- Only one large model can be resident on a 12GB card. The dispatcher stops the previous llama-server/proxy and starts the target on the same ports (8081/8787) with a fixed upstream alias (`-a local`). The proxy's `DEFAULT_MODEL=local`, visible IDs/names = full Ollama tag, `FORCE_MODEL=1`.
+- Reuse a running server only if its command line contains the target main blob and `-a local`, and `/v1/models` returns the target tag. Otherwise switch.
+- Detect active local Claude Code sessions (command line contains the per-model settings path); abort unless `-Force`.
+- Profiles: MoE (`--n-cpu-moe`), full GPU + mmproj, generic auto-fit. Enable an mmproj only when VRAM allows; a Qwen 35B mmproj can push a 12GB card over the limit.
+- Management command: `claude-local-models -List / -Refresh / -Stop / -Switch <tag> -Force`. After `ollama pull`, run `-Refresh` to add the new wrapper.
+- On laptops, check the vendor performance mode (Performance/Entertainment/Quiet; e.g. Clevo Fn+3) before tuning. Pin llama-server to P-cores and tune `-t`; on an 8-P-core CPU, 8 threads plus affinity can beat 16 threads. Vendor Quiet mode can cut throughput by 2–4× and is not fixed by `nvidia-smi` clock locks.
 
 ## 4. Context, tools, permissions
 
@@ -142,7 +214,7 @@ Do not use a PowerShell function that sets `$env:` without restoring it; the var
 4. Text: POST `/v1/messages` with a short prompt; expect Anthropic JSON.
 5. Tools: POST `/v1/messages` with a simple tool schema; expect a `tool_use` block.
 6. Claude Code: ask "你好"; then ask it to read a small file.
-7. Normal `claude` still uses Anthropic.
+7. In `claude-local`, `/status` shows the local base URL; normal `claude` still uses its original provider.
 8. Stop/restart releases VRAM.
 
 ## 6. Team mode: LiteLLM in front of vLLM/SGLang
@@ -170,6 +242,6 @@ general_settings:
 
 - Give each user a virtual key; do not share the master key. Set budgets/rate limits per key.
 - Keep LiteLLM on `127.0.0.1:8787` or behind the team's auth gateway; do not expose it directly to the LAN.
-- Set `ANTHROPIC_BASE_URL=http://127.0.0.1:8787` (no `/v1`).
+- Set `ANTHROPIC_BASE_URL=http://127.0.0.1:8787` (no `/v1`). If the user's settings file defines `env`, put this in a dedicated `--settings` file instead.
 - Verify `/v1/messages` with a tool schema before rolling out; LiteLLM's Anthropic compatibility varies by version.
 - If LiteLLM's tool translation is unreliable, put `claude-code-router` in front for Anthropic↔OpenAI and keep LiteLLM for keys/quotas.
