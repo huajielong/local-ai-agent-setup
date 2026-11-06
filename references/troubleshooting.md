@@ -54,7 +54,7 @@ Fix:
 
 - `ANTHROPIC_PROXY_UPSTREAM_API_KEY is required` → add `ANTHROPIC_PROXY_UPSTREAM_API_KEY=dummy` to `.env`.
 - Proxy must run from the directory containing `.env`, or receive the env vars directly.
-- Check the listen port (`8787`) is free.
+- Check the listen port (`8787`, or an internal port such as `8788` when a sanitizer relay owns the public 8787) is free.
 - Check the upstream URL is the full `/v1/chat/completions` endpoint.
 - macOS/Linux: make the binary executable (`chmod +x`).
 
@@ -68,6 +68,7 @@ Fix:
 - Model ID rejected by the online API after adding `--settings`: the settings file is read but `ANTHROPIC_BASE_URL` is missing or wrong. Put the base URL and model IDs in the same file.
 - `CLAUDE_CODE_AUTO_COMPACT_WINDOW` warning: values below 100000 are clamped to 100000. Set 100000 or override the inherited value; on a 32K local model, long sessions can overflow before auto-compaction.
 - Claude Code shows "Sonnet 4.6" / "Opus" although requests are local: the proxy advertises built-in Claude IDs, and Claude Code renders its own label for known IDs. Set `ANTHROPIC_PROXY_DEFAULT_*_MODEL` to the local alias (for example `qwen`) and `ANTHROPIC_PROXY_DEFAULT_*_MODEL_NAME` to a local name, then launch with `--model qwen`; confirm with `/v1/models`.
+- `500 upstream: Jinja Exception: System message must be at the beginning.`: Claude Code 2.1.x inserts environment context as mid-conversation `role:"system"` messages; strict Qwen/llama.cpp templates reject them. Put a sanitizer relay in front (client 8787 -> sanitizer -> anthropic-proxy 8788) that merges mid-list system messages into the top-level `system` prompt. Replay the failed request to confirm 200; a new session alone only works until the next environment update. See `references/claude-code-integration.md` §2.4.
 - Normal `claude` starts using local proxy: environment variables leaked; prefer a `--settings` wrapper, or clear `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY`.
 - Base URL: do **not** append `/v1` to `ANTHROPIC_BASE_URL`.
 

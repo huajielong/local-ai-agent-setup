@@ -2,7 +2,7 @@
 name: local-ai-agent-setup
 description: Use this skill whenever the user wants to run a local LLM, a local AI agent, or Claude Code with local models on any computer; asks what model their hardware can run; or wants to set up or reconfigure Ollama, llama.cpp, LM Studio, MLX, vLLM, SGLang, LiteLLM, or an Anthropic proxy; or needs a team/multi-user local inference server. It detects OS/GPU/VRAM/RAM/disk, chooses a model and backend tier, and produces a confirmed setup plan. Trigger even if the user only says "本地大模型", "本地 AI", "离线 AI", "端侧模型", "跑得动什么模型", "Claude Code 本地", "Claude Code 本地模型", "本地部署", "本地模型速度慢", "性能调优", "多 GPU", "工作站", "团队本地模型", "多用户本地推理", "vLLM 本地部署", "Ollama 模型目录", "Ollama 配置", "本地模型迁移", "32K 上下文", or gives hardware specs without naming a tool. Also trigger when someone wants to turn a working local setup into a portable handover package or a setup guide for another computer. Do not use for cloud-only API setup, generic CUDA/ROCm kernel development, or prompt-only tasks; use this skill only when the goal is on-device inference or a local Claude Code wrapper.
 compatibility: Claude Code on Windows, macOS, or Linux. Detection scripts use PowerShell or bash; no third-party Python package is required.
-version: 0.3.0
+version: 0.3.1
 author: huajielong
 license: MIT
 ---
@@ -84,7 +84,7 @@ Use `references/claude-code-integration.md`. Two modes:
 
 Before generating the wrapper, read `~/.claude/settings.json` and any project `.claude/settings.json`. If their `env` block sets `ANTHROPIC_BASE_URL` or model IDs, generate a dedicated settings JSON and launch with `claude --settings <file> --model <id>`; `export`/`set` alone will be silently ignored. See `references/claude-code-integration.md` §0.
 
-Always keep normal `claude` untouched; generate a `claude-local` wrapper. If the user wants the UI to show the local model rather than a built-in Claude label, set the proxy's `ANTHROPIC_PROXY_DEFAULT_SONNET/OPUS/HAIKU_MODEL` to the local alias and `..._MODEL_NAME` to a human-readable name, then launch with `--model <local-id>`. On a machine with multiple installed models behind one GPU, generate a registry and one wrapper per model; only one can be active at a time, and switching restarts llama-server/proxy (see `references/claude-code-integration.md` §3.1). For a team, put LiteLLM in front of vLLM/SGLang to expose `/v1/messages` and per-user virtual keys; point each `claude-local` at LiteLLM, not directly at the model server.
+Always keep normal `claude` untouched; generate a `claude-local` wrapper. If the user wants the UI to show the local model rather than a built-in Claude label, set the proxy's `ANTHROPIC_PROXY_DEFAULT_SONNET/OPUS/HAIKU_MODEL` to the local alias and `..._MODEL_NAME` to a human-readable name, then launch with `--model <local-id>`. Claude Code 2.1.x may send environment context as mid-conversation `role:"system"` messages; strict Qwen/llama.cpp Jinja templates reject these with `500 ... System message must be at the beginning`, so insert a sanitizer relay that hoists them into the top-level `system` prompt (client 8787 → sanitizer → anthropic-proxy 8788; see `references/claude-code-integration.md` §2.4). On a machine with multiple installed models behind one GPU, generate a registry and one wrapper per model; only one can be active at a time, and switching restarts llama-server/proxy (see `references/claude-code-integration.md` §3.1). For a team, put LiteLLM in front of vLLM/SGLang to expose `/v1/messages` and per-user virtual keys; point each `claude-local` at LiteLLM, not directly at the model server.
 
 ### 5. Present the plan (exact template)
 
@@ -216,6 +216,7 @@ Use these as starting points; substitute placeholders and keep paths platform-co
 - `assets/anthropic-proxy.env.tmpl`
 - `assets/claude-local.settings.json.tmpl` (preferred)
 - `assets/claude-local.env.tmpl` (only when no settings file defines `env`)
+- `assets/chat-sanitizer.js` (public 8787 → anthropic-proxy 8788; hoists mid-conversation system messages)
 - `assets/health-check.ps1`
 - `assets/health-check.sh`
 
@@ -233,5 +234,6 @@ For start scripts, generate platform-specific commands from the model/backend pl
 - Writing `set ANTHROPIC_BASE_URL=...` when a settings file already defines `env`; the wrapper silently keeps using the online provider.
 - Shipping LF-only Windows `.bat`/`.cmd` files.
 - Quoting a single short-run tok/s peak as the expected sustained speed.
+- Pointing Claude Code 2.1.x directly at a strict Jinja template without handling mid-conversation system messages.
 - Tuning GPU clocks or copying `-t`/affinity/`--n-cpu-moe` from another machine before checking the vendor power mode and benchmarking.
 - Using a translation-only or embedding model for Claude Code tool use.

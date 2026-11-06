@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.1 — 2026-11-06
+
+- Fix Claude Code 2.1.x with strict chat templates: Claude Code can send environment context as mid-conversation `role:"system"` messages, which Qwen/llama.cpp templates reject with `500 ... System message must be at the beginning`. Document a sanitizer relay (public 8787 → anthropic-proxy 8788) that hoists those messages into the top-level `system` prompt; the local launcher starts it automatically.
+- Troubleshooting and Claude Code integration references updated with the symptom, cause, port layout, and replay-based verification.
+
 ## v0.3.0 — 2026-11-06
 
 - Multi-model local launchers: generate a registry from Ollama, one `claude-local-<name>` wrapper per installed model, per-model settings, and a management command (`-List/-Refresh/-Stop/-Switch`).

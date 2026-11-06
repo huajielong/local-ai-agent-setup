@@ -163,6 +163,24 @@ claude --model claude-sonnet-4-6
 - `claude-sonnet-4-6` is a safe model ID to use with this proxy; the local model still does the work.
 - Keep the normal `claude` command untouched. `--settings` applies only to that invocation.
 
+### 2.4 Mid-conversation system messages (Claude Code 2.1.x)
+
+Claude Code 2.1.x can send environment context and environment updates as `role: "system"` entries **inside** the `messages` array, not only in the top-level `system` field. Strict chat templates (Qwen and many other llama.cpp `--jinja` templates) require every system message to be the first message and otherwise return:
+
+```text
+500 upstream: Jinja Exception: System message must be at the beginning.
+```
+
+The first turn may succeed; the failure starts after a tool call or an environment update, and then every retry of that session fails.
+
+Fix: insert a small sanitizer between Claude Code and anthropic-proxy:
+
+```text
+Claude Code -> 127.0.0.1:8787 (sanitizer) -> 127.0.0.1:8788 (anthropic-proxy) -> 127.0.0.1:8081 (llama.cpp)
+```
+
+The sanitizer parses the JSON request and moves every mid-list `system` message into the top-level `system` prompt (append it as a text block; create the field if absent), removes those messages from `messages`, and forwards the rewritten body. Keep the client-facing URL in the settings file at 8787; the proxy listens on an internal port. Use `assets/chat-sanitizer.js` as the starting point (Node, no dependencies; `SANITIZER_LISTEN_PORT`/`SANITIZER_UPSTREAM_PORT`, defaults 8787/8788). Log one line per rewrite (`hoisted N ...`), and verify by replaying the exact failed request: it must return 200. Restarting the Claude Code session alone is a temporary workaround — the next environment update can trigger it again.
+
 ## 3. Wrapper patterns
 
 Use a dedicated settings file; it scopes the override to the invocation and survives an existing online-provider configuration.
@@ -190,7 +208,7 @@ When several Ollama models are installed, generate a registry and one wrapper pe
 - Scan `GET http://127.0.0.1:11434/api/tags`; resolve each model's GGUF/mmproj/draft from the Ollama manifest by layer mediaType (`application/vnd.ollama.image.model`, `.projector`, `.draft`). Do not infer the projector from FROM order.
 - Write a registry (tag, command, blobs, profile, capabilities) and per-model settings JSON.
 - Generate `claude-local-<slug>` wrappers. The wrapper runs the dispatcher with `-Prepare`, then `claude --settings <per-model-settings> --model <full-tag> %*`; keep the final call in the `.cmd` so `-p`, `--resume`, `--version` pass through unchanged.
-- Only one large model can be resident on a 12GB card. The dispatcher stops the previous llama-server/proxy and starts the target on the same ports (8081/8787) with a fixed upstream alias (`-a local`). The proxy's `DEFAULT_MODEL=local`, visible IDs/names = full Ollama tag, `FORCE_MODEL=1`.
+- Only one large model can be resident on a 12GB card. The dispatcher stops the previous llama-server/proxy and starts the target on the same ports (8081; public 8787 for the sanitizer; internal 8788 for anthropic-proxy) with a fixed upstream alias (`-a local`). The proxy's `DEFAULT_MODEL=local`, visible IDs/names = full Ollama tag, `FORCE_MODEL=1`.
 - Reuse a running server only if its command line contains the target main blob and `-a local`, and `/v1/models` returns the target tag. Otherwise switch.
 - Detect active local Claude Code sessions (command line contains the per-model settings path); abort unless `-Force`.
 - Profiles: MoE (`--n-cpu-moe`), full GPU + mmproj, generic auto-fit. Enable an mmproj only when VRAM allows; a Qwen 35B mmproj can push a 12GB card over the limit.

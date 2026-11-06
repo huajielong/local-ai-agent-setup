@@ -8,7 +8,7 @@
 
 A cross-platform Claude Code skill that detects your hardware, picks a local LLM stack you can actually run, generates a `claude-local` wrapper, and produces a confirmation-gated setup plan.
 
-[![Version](https://img.shields.io/badge/version-0.3.0-blue?style=flat-square)](https://github.com/huajielong/local-ai-agent-setup/releases/tag/v0.3.0)
+[![Version](https://img.shields.io/badge/version-0.3.1-blue?style=flat-square)](https://github.com/huajielong/local-ai-agent-setup/releases/tag/v0.3.1)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey?style=flat-square)](#模型选择与平台)
 
@@ -16,7 +16,7 @@ A cross-platform Claude Code skill that detects your hardware, picks a local LLM
 
 </div>
 
-> **状态：活跃维护** · v0.3.0 · 2026-11-06 · 这不是 Anthropic 官方项目。
+> **状态：活跃维护** · v0.3.1 · 2026-11-06 · 这不是 Anthropic 官方项目。
 
 ## 它解决什么问题
 
@@ -56,10 +56,13 @@ git clone https://github.com/huajielong/local-ai-agent-setup.git `
 
 ### 方式 B：安装 `.skill` 包
 
-从 [v0.3.0 Release](https://github.com/huajielong/local-ai-agent-setup/releases/tag/v0.3.0) 下载 `local-ai-agent-setup-v0.3.0.skill`，按 Claude Code 的技能安装方式导入。
+从 [v0.3.1 Release](https://github.com/huajielong/local-ai-agent-setup/releases/tag/v0.3.1) 下载 `local-ai-agent-setup-v0.3.1.skill`，按 Claude Code 的技能安装方式导入。
 
 > [!IMPORTANT]
 > 如果 `~/.claude/settings.json` 的 `env` 已指向在线模型（例如 DeepSeek），shell 里的 `ANTHROPIC_BASE_URL` 会被覆盖。技能会生成独立 settings 文件并用 `claude --settings` 启动，不要只 `export`。
+
+> [!NOTE]
+> v0.3.1 处理 Claude Code 2.1.x 的中途 `system` 消息：Qwen/llama.cpp 的 Jinja 模板会报 `System message must be at the beginning`。本地启动器现在内置 `chat-sanitizer`（客户端 8787 → 代理 8788），转发前自动把这些消息并入顶层 system。
 
 安装后在 Claude Code 里直接说：
 
