@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.0 — 2026-11-07
+
+- Context sizing is now derived per model instead of hardcoded at 32K. New `references/context-sizing.md`: KV-cache math, VRAM budget, a 32K→256K ladder, how much each MoE layer moved to CPU buys, and the measured 12GB trade-off (32K/`--n-cpu-moe 24` ≈ 86 tok/s vs 128K/`--n-cpu-moe 30` ≈ 52 tok/s).
+- `CLAUDE_CODE_AUTO_COMPACT_WINDOW` is now a template variable and must be `round_down(server_ctx × 0.76, 1000)`. Documented the consequence of Claude Code's 100000 floor: below ~110K server context auto-compaction can never fire, and `/compact` overflows with the same error as a normal turn.
+- New optional helper `scripts/gguf-kv-budget.py` (stdlib only) reads GGUF metadata and prints KV/token, the context ladder, and a suggested context from measured free VRAM.
+- Docs updated to stop presenting 32K as the target: SKILL.md plan template, verification, tuning order, heuristics and anti-patterns; model-matrix, performance-tuning, backends, troubleshooting, claude-code-integration.
+- Launcher guidance: store context + offload per model profile and generate `-c` and the auto-compact window from one number; reuse detection that compares only the model path will silently keep an old `-c`.
+
 ## v0.3.1 — 2026-11-06
 
 - Fix Claude Code 2.1.x with strict chat templates: Claude Code can send environment context as mid-conversation `role:"system"` messages, which Qwen/llama.cpp templates reject with `500 ... System message must be at the beginning`. Document a sanitizer relay (public 8787 → anthropic-proxy 8788) that hoists those messages into the top-level `system` prompt; the local launcher starts it automatically.

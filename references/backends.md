@@ -29,7 +29,7 @@
 
 ```bash
 OLLAMA_MODELS=D:\Ollama\models          # optional custom model dir (Windows example)
-OLLAMA_CONTEXT_LENGTH=32768             # Claude Code needs >=32K; 4K default is unusable
+OLLAMA_CONTEXT_LENGTH=32768             # floor for Claude Code; size it with context-sizing.md
 OLLAMA_FLASH_ATTENTION=1
 OLLAMA_KV_CACHE_TYPE=q8_0               # best balance; q4_0 if VRAM is tight
 OLLAMA_NUM_PARALLEL=1
@@ -45,9 +45,9 @@ OLLAMA_MAX_LOADED_MODELS=1
 Core flags for a MoE model on 12GB:
 
 ```text
---n-cpu-moe 24        # keep experts of the first N layers on CPU; tune 16–32
+--n-cpu-moe 30        # keep experts of the first N layers on CPU; tune 16–32+
 -ngl 999              # offload all possible layers
--c 32768              # context; lower to 16384 if OOM
+-c 131072             # context: size it from the KV budget, not a constant
 -fa on                # flash attention
 -ctk q8_0 -ctv q8_0   # KV cache quantization
 --load-mode none      # avoid mmap overhead when RAM is sufficient
@@ -58,7 +58,7 @@ Core flags for a MoE model on 12GB:
 --host 127.0.0.1 --port 8081 --jinja -a qwen
 ```
 
-- `--n-cpu-moe`: lower = more experts on GPU (faster, more VRAM); higher = more CPU (safer, slower). Tune until VRAM has ~0.5–1GB headroom.
+- `--n-cpu-moe`: lower = more experts on GPU (faster, more VRAM); higher = more CPU (safer, slower). Tune until VRAM has ~0.5–1GB headroom **at the context you want**; these two values move together (`context-sizing.md`).
 - `--list-devices` must show `CUDA0` / `Metal` / `Vulkan0`; otherwise the build is CPU-only or the runtime DLL path is wrong.
 - Match the GGUF architecture; a generic CUDA build may not support a brand-new architecture.
 
@@ -86,7 +86,7 @@ vllm serve <model> --tensor-parallel-size 2 --max-model-len 32768 \
 - `--enable-prefix-caching` is the biggest Claude Code latency win because the ~20K system prompt repeats every turn.
 - `--tool-call-parser` must match the model/version (Qwen often uses `hermes`); verify a real `tool_use` response, not just a text completion.
 - Start with `--max-num-seqs 4`; raise it only after watching KV-cache usage and preemption.
-- Start at 32K context; raise it only after measuring KV-cache headroom.
+- Size `--max-model-len` from the KV budget (`context-sizing.md`); 32K is a starting point for a first measurement, not a target.
 
 SGLang equivalent:
 

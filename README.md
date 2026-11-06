@@ -85,6 +85,8 @@ Active: qwen3.6:35b-a3b-mtp-q4_K_M (llama PID 31356, proxy PID 38696)
 
 **v0.3.1 修复**：Claude Code 2.1.x 可能发送中途 `system` 消息，Qwen/llama.cpp 的 Jinja 模板会报 `System message must be at the beginning`。本地启动器内置 `chat-sanitizer`（客户端 8787 → 代理 8788），转发前自动把这些消息并入顶层 system。
 
+**v0.4.0 变更**：上下文不再写死 32K。按模型 KV 开销和显存预算选出上下文，再由它反推自动压缩窗口。Claude Code 会把 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` 抬到至少 100000，所以服务端上下文低于约 110K 时自动压缩永远不会触发——要么把上下文做到 128K+，要么手动 `/compact`。详见 [`references/context-sizing.md`](references/context-sizing.md)。
+
 ## 核心能力
 
 - **只读硬件检测**：Windows PowerShell / macOS-Linux bash 脚本，读取 OS、CPU、RAM、磁盘、GPU/VRAM、已装工具和 Ollama 模型。
@@ -92,6 +94,7 @@ Active: qwen3.6:35b-a3b-mtp-q4_K_M (llama PID 31356, proxy PID 38696)
 - **后端选择**：Ollama、llama.cpp、LM Studio、MLX、vLLM、SGLang；单用户和团队并发有明确分支。
 - **Claude Code 接入**：Ollama 原生 Anthropic API、llama.cpp + anthropic-proxy、vLLM/SGLang + LiteLLM；生成 `claude-local` 包装脚本，用 `--settings` 隔离配置，不修改正常 `claude`。
 - **多模型入口**：按 Ollama 已安装模型生成 `claude-local-<name>`，单 GPU 单模型常驻切换，管理命令 `claude-local-models -List/-Refresh/-Stop/-Switch`。
+- **上下文预算**：按 GGUF 的层数/ KV 头/head dim 算出每 token 的 KV 开销，再按显存选 32K→256K 档位，并由上下文反推 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`；附 `scripts/gguf-kv-budget.py` 直接算。见 [`references/context-sizing.md`](references/context-sizing.md)。
 - **性能调优**：电源/厂商模式、offload、CPU 亲和性、量化/上下文；完整清单见 [`references/performance-tuning.md`](references/performance-tuning.md)。
 - **团队/多用户/工作站**：vLLM/SGLang 连续批处理、Tensor Parallel、LiteLLM 虚拟密钥/配额/审计、SSH 隧道/VPN、仅绑 `127.0.0.1`。
 - **安全门控**：下载/安装前必须确认；服务只绑 localhost；不默认 `--dangerously-skip-permissions`；尊重模型许可证，不打包权重。
@@ -102,7 +105,7 @@ Active: qwen3.6:35b-a3b-mtp-q4_K_M (llama PID 31356, proxy PID 38696)
 
 | 场景 | 优先选择 |
 |---|---|
-| 编程 / Agent / Claude Code | 支持工具调用、32K+ 上下文的模型；12GB 可用 Qwen3.6-35B-A3B MoE + CPU offload |
+| 编程 / Agent / Claude Code | 支持工具调用、上下文能拉到 128K 的模型；12GB 可用 Qwen3.6-35B-A3B MoE + CPU offload |
 | 快速问答 / 多模态 | Gemma 4 12B 等全 GPU 模型 |
 | 翻译 | TranslateGemma 4B（GPU/CPU 版本按显存选择） |
 | 团队 / 多用户 / 多 GPU | vLLM/SGLang + LiteLLM；按并发吞吐评估，不用单流 tok/s |
@@ -128,7 +131,7 @@ Active: qwen3.6:35b-a3b-mtp-q4_K_M (llama PID 31356, proxy PID 38696)
 1. **OS / 厂商电源模式**：笔记本 Control Center 的 Performance/Entertainment/Quiet（Clevo/Colorful 常见 Fn+3）、Windows 电源计划、NVIDIA 控制面板、Linux `powerprofilesctl`、macOS Low Power Mode。
 2. **后端 offload**：llama.cpp `-ngl` / `--n-cpu-moe` / flash attention / KV 量化 / 上下文 / MTP；Ollama、LM Studio、vLLM/SGLang 的对应项。
 3. **CPU 线程/亲和性**：识别 P-core/E-core/CCD/NUMA，把 llama-server 绑到 P-core，调 `-t`（4/8/12/16 实测）。
-4. **量化/上下文**：Q4_K_M、32K 上下文、q8 KV；工具调用模型优先。
+4. **量化/上下文**：Q4_K_M、q8 KV；上下文按 KV 预算算出来（见 [`references/context-sizing.md`](references/context-sizing.md)），32K 只是下限。
 5. **基准**：至少 3 次、≥250 token，区分短测峰值和持续速度，记录 GPU 时钟/功耗/P-state 和 CPU 负载。
 
 一个真实案例，同一台 RTX 5070 Ti Laptop 12GB、同一个 Qwen3.6-35B-A3B Q4、同一个 32K prompt，只差厂商电源模式和 CPU 调度：

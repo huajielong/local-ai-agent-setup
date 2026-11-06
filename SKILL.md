@@ -1,8 +1,8 @@
 ---
 name: local-ai-agent-setup
-description: Use this skill whenever the user wants to run a local LLM, a local AI agent, or Claude Code with local models on any computer; asks what model their hardware can run; or wants to set up or reconfigure Ollama, llama.cpp, LM Studio, MLX, vLLM, SGLang, LiteLLM, or an Anthropic proxy; or needs a team/multi-user local inference server. It detects OS/GPU/VRAM/RAM/disk, chooses a model and backend tier, and produces a confirmed setup plan. Trigger even if the user only says "本地大模型", "本地 AI", "离线 AI", "端侧模型", "跑得动什么模型", "Claude Code 本地", "Claude Code 本地模型", "本地部署", "本地模型速度慢", "性能调优", "多 GPU", "工作站", "团队本地模型", "多用户本地推理", "vLLM 本地部署", "Ollama 模型目录", "Ollama 配置", "本地模型迁移", "32K 上下文", or gives hardware specs without naming a tool. Also trigger when someone wants to turn a working local setup into a portable handover package or a setup guide for another computer. Do not use for cloud-only API setup, generic CUDA/ROCm kernel development, or prompt-only tasks; use this skill only when the goal is on-device inference or a local Claude Code wrapper.
+description: Use this skill whenever the user wants to run a local LLM, a local AI agent, or Claude Code with local models on any computer; asks what model their hardware can run; or wants to set up or reconfigure Ollama, llama.cpp, LM Studio, MLX, vLLM, SGLang, LiteLLM, or an Anthropic proxy; or needs a team/multi-user local inference server. It detects OS/GPU/VRAM/RAM/disk, chooses a model and backend tier, and produces a confirmed setup plan. Trigger even if the user only says "本地大模型", "本地 AI", "离线 AI", "端侧模型", "跑得动什么模型", "Claude Code 本地", "Claude Code 本地模型", "本地部署", "本地模型速度慢", "性能调优", "多 GPU", "工作站", "团队本地模型", "多用户本地推理", "vLLM 本地部署", "Ollama 模型目录", "Ollama 配置", "本地模型迁移", "32K 上下文", "上下文大小", "上下文开多大", "context size", or gives hardware specs without naming a tool. Also trigger when someone wants to turn a working local setup into a portable handover package or a setup guide for another computer. Do not use for cloud-only API setup, generic CUDA/ROCm kernel development, or prompt-only tasks; use this skill only when the goal is on-device inference or a local Claude Code wrapper.
 compatibility: Claude Code on Windows, macOS, or Linux. Detection scripts use PowerShell or bash; no third-party Python package is required.
-version: 0.3.1
+version: 0.4.0
 author: huajielong
 license: MIT
 ---
@@ -86,6 +86,8 @@ Before generating the wrapper, read `~/.claude/settings.json` and any project `.
 
 Always keep normal `claude` untouched; generate a `claude-local` wrapper. If the user wants the UI to show the local model rather than a built-in Claude label, set the proxy's `ANTHROPIC_PROXY_DEFAULT_SONNET/OPUS/HAIKU_MODEL` to the local alias and `..._MODEL_NAME` to a human-readable name, then launch with `--model <local-id>`. Claude Code 2.1.x may send environment context as mid-conversation `role:"system"` messages; strict Qwen/llama.cpp Jinja templates reject these with `500 ... System message must be at the beginning`, so insert a sanitizer relay that hoists them into the top-level `system` prompt (client 8787 → sanitizer → anthropic-proxy 8788; see `references/claude-code-integration.md` §2.4). On a machine with multiple installed models behind one GPU, generate a registry and one wrapper per model; only one can be active at a time, and switching restarts llama-server/proxy (see `references/claude-code-integration.md` §3.1). For a team, put LiteLLM in front of vLLM/SGLang to expose `/v1/messages` and per-user virtual keys; point each `claude-local` at LiteLLM, not directly at the model server.
 
+**Size the context per model before writing the wrapper.** Do not hardcode 32K: compute the KV footprint from the GGUF metadata and the VRAM budget (`scripts/gguf-kv-budget.py`, stdlib-only, does this from the GGUF header), then derive the auto-compact window from the chosen context (`references/context-sizing.md`). Claude Code clamps `CLAUDE_CODE_AUTO_COMPACT_WINDOW` to a floor of 100000, so a server context below ~110K cannot auto-compact at all — size to at least 128K when the hardware allows, and say so when it does not.
+
 ### 5. Present the plan (exact template)
 
 Use this structure. Keep the main plan scannable; put details in tables and move long runbooks, monitoring, and rollout checklists into an appendix.
@@ -120,7 +122,8 @@ Use this structure. Keep the main plan scannable; put details in tables and move
 - Inference: Ollama / llama.cpp / LM Studio / MLX / vLLM / SGLang
 - Claude Code bridge: none / Ollama native / anthropic-proxy / LiteLLM
 - Concurrency: single user / team (approx. N users); if team, batched server + gateway + per-user keys
-- Context: 32K for Claude Code; 2K for translation
+- Context: <N> for Claude Code (<x> GB KV, <y> GB VRAM free); auto-compact <window>; 2K for translation
+- Context math: <layers> × <kv heads> × <head dim> × <bytes> = <kb> KB/token
 - VRAM budget: ...
 
 ## 5. Setup plan
@@ -155,7 +158,8 @@ Use this structure. Keep the main plan scannable; put details in tables and move
 
 - Install prerequisites only if missing.
 - Pull models with official tags; show progress.
-- Generate start scripts/wrappers from `assets/` templates, substituting paths/ports/model names.
+- Generate start scripts/wrappers from `assets/` templates, substituting paths, ports, model names, and the context/auto-compact values chosen in step 4.
+- Put the context in exactly one place per model (the registry entry or a single variable) and pass it to both the server flag and `CLAUDE_CODE_AUTO_COMPACT_WINDOW`; two independent constants drift apart and produce the "request exceeds available context size" error.
 - On Windows, save `.bat`/`.cmd` files with CRLF line endings and ASCII comments; LF-only batch files are misparsed by cmd.exe.
 - Start services; verify health; run one end-to-end task.
 - Write a short `README` with start/stop/health commands and known limits.
@@ -164,6 +168,8 @@ Use this structure. Keep the main plan scannable; put details in tables and move
 
 Minimum checks:
 - Model listed (`ollama list` or GGUF path exists).
+- Server context is the planned one: `curl -s http://127.0.0.1:8081/props | jq '.default_generation_settings.n_ctx'`, and free VRAM is still ≥1GB.
+- One request larger than the context you previously considered safe (for example a 40K-token filler) returns 200 rather than a context-size error.
 - Health endpoint for the model server.
 - Health endpoint for the proxy (if used).
 - A real completion (not just "server up").
@@ -180,7 +186,7 @@ Use `references/performance-tuning.md`. Tune in this order:
 1. **OS/vendor power mode**: Performance (not Quiet), AC power, NVIDIA/AMD control panel, MUX/dGPU mode, close background GPU apps.
 2. **Backend/offload**: GPU layers / `--n-cpu-moe`, flash attention, KV quantization, context, MTP/draft.
 3. **CPU threads/affinity**: detect P-cores/CCD/NUMA; tune `-t`; benchmark 4/8/12/16.
-4. **Model/quant/context**: Q4_K_M, 32K for Claude Code, tool-capable models.
+4. **Model/quant/context**: Q4_K_M, the largest context that fits (see `references/context-sizing.md`), tool-capable models.
 5. **Measure** at least 3 runs with ≥250 output tokens; report sustained generation and prompt speed; compare GPU clocks/power/P-state and CPU load.
 
 Do not tune clocks or copy `-t`/affinity/`--n-cpu-moe` values from another machine before checking the vendor power mode and benchmarking. A vendor Quiet mode can cut throughput by 2–4× and is not fixed by `nvidia-smi -lgc`.
@@ -191,7 +197,7 @@ Do not tune clocks or copy `-t`/affinity/`--n-cpu-moe` values from another machi
 - **Quality first, VRAM second, speed third** for coding/agent work. **Speed first** for translation/chat.
 - **Dense vs MoE:** dense models are simpler and often higher quality per parameter; MoE models are much faster when partially offloaded. On 12GB, Qwen3.6-35B-A3B (MoE) is usually the best agent compromise.
 - **Quantization:** Q4_K_M is the sweet spot. Q8 is slower and bigger with little practical gain; Q2/IQ2 hurts tool calling and long-context reliability.
-- **Context:** Claude Code's system prompt + tool definitions are roughly 20K tokens. 4K default context is unusable; use 32K. Translation models can stay at 2K.
+- **Context:** Claude Code's system prompt + tool definitions are roughly 20K tokens, so 4K is unusable and 32K is only a floor. Budget the KV cache and take the largest rung that fits: on 12GB with a 35B-A3B Q4, 128K is reachable at ~52 tok/s by moving 30 of 41 MoE layers to CPU. Below ~110K the auto-compact window is clamped and sessions die at the context limit. See `references/context-sizing.md`. Translation models can stay at 2K.
 - **Single user vs team:** llama.cpp/Ollama are simplest for one person; a team hitting one endpoint needs a batched server (vLLM/SGLang) behind LiteLLM. The model can be the same; concurrency changes the backend.
 - **Multi-GPU/workstation:** sum VRAM for tensor parallel; use vLLM/SGLang + LiteLLM for concurrent users and llama.cpp for a single-user workstation. Measure concurrent throughput, not single-stream tok/s.
 - **Borderline fit:** if the weights fit only by offloading most layers to RAM, say so and set expectations; prefer a smaller model at Q4 over a larger model that barely loads.
@@ -203,6 +209,7 @@ Do not tune clocks or copy `-t`/affinity/`--n-cpu-moe` values from another machi
 Read these only when needed:
 
 - `references/model-matrix.md` — model tags, sizes, licenses, VRAM/RAM tiers, expected speeds.
+- `references/context-sizing.md` — KV-cache math, VRAM budget, context ladder, auto-compact window, verification and traps.
 - `references/backends.md` — Ollama vs llama.cpp vs LM Studio vs MLX; platform notes; proxy options.
 - `references/claude-code-integration.md` — settings/env precedence, Anthropic proxy setup, model IDs, context, tool format, permissions.
 - `references/performance-tuning.md` — cross-platform power/vendor modes, offload, CPU affinity, quantization/context, benchmark method, and traps.
@@ -219,6 +226,7 @@ Use these as starting points; substitute placeholders and keep paths platform-co
 - `assets/chat-sanitizer.js` (public 8787 → anthropic-proxy 8788; hoists mid-conversation system messages)
 - `assets/health-check.ps1`
 - `assets/health-check.sh`
+- `scripts/gguf-kv-budget.py` — optional; reads a GGUF header and prints KV/token, the context ladder, and a suggested context from measured free VRAM
 
 For start scripts, generate platform-specific commands from the model/backend plan rather than copying a Windows-only batch file to macOS/Linux.
 
@@ -234,6 +242,8 @@ For start scripts, generate platform-specific commands from the model/backend pl
 - Writing `set ANTHROPIC_BASE_URL=...` when a settings file already defines `env`; the wrapper silently keeps using the online provider.
 - Shipping LF-only Windows `.bat`/`.cmd` files.
 - Quoting a single short-run tok/s peak as the expected sustained speed.
+- Hardcoding 32K context while leaving `CLAUDE_CODE_AUTO_COMPACT_WINDOW` at 100000: compaction never fires and `/compact` overflows too.
+- Setting the auto-compact window at or above the server context (it must fit the transcript plus the ~20K system prompt).
 - Pointing Claude Code 2.1.x directly at a strict Jinja template without handling mid-conversation system messages.
 - Tuning GPU clocks or copying `-t`/affinity/`--n-cpu-moe` from another machine before checking the vendor power mode and benchmarking.
 - Using a translation-only or embedding model for Claude Code tool use.

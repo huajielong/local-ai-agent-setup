@@ -45,7 +45,8 @@ claude --settings "/path/claude-local.settings.json" --model claude-sonnet-4-6 "
 Rules:
 
 - Override every `ANTHROPIC_DEFAULT_*_MODEL` and `CLAUDE_CODE_SUBAGENT_MODEL` that the user's settings define; otherwise background tasks and subagents keep using the online model IDs.
-- Override `CLAUDE_CODE_AUTO_COMPACT_WINDOW` if the user's settings define it. Claude Code clamps values below 100000; a value copied from a 1M-context online model will never trigger compaction on a 32K local model, so long sessions overflow.
+- Override `CLAUDE_CODE_AUTO_COMPACT_WINDOW` if the user's settings define it. It must be **below the server context**, because the compaction request carries the whole transcript plus the ~20K system prompt. Derive it as `round_down(server_ctx × 0.76, 1000)`; see `context-sizing.md` §4.
+- Claude Code clamps the window to a floor of 100000 and warns when you ask for less. A value copied from a 1M-context online model will never trigger compaction on a 32K local model — and neither will a correctly small value, because of the floor. On a server context below ~110K, auto-compaction cannot work; size the context to 128K+ or tell the user to `/compact` manually at ~50–60% of the limit.
 - `API_TIMEOUT_MS=900000` accommodates slow first-token latency from local prompt processing.
 - The dedicated file is not written back; normal `claude` keeps using its original provider.
 
@@ -74,7 +75,7 @@ Rules:
 - Ollama must be >=0.14 for `/v1/messages`.
 - If §0 found a conflicting `env` block in a settings file, the `export`/`set` examples above are ignored; use `claude --settings <dedicated.json>` there too.
 - Do **not** append `/v1` to `ANTHROPIC_BASE_URL`; Claude Code appends `/v1/messages` itself.
-- Set a context of at least 32K (`OLLAMA_CONTEXT_LENGTH=32768`); 4K is unusable for Claude Code.
+- Set a context of at least 32K (`OLLAMA_CONTEXT_LENGTH=32768`); 4K is unusable for Claude Code. Ollama has no MoE expert offload in stable 0.40.x, so a big model may not afford 128K — in that case tell the user auto-compaction will not fire below ~110K and they must `/compact` manually (`context-sizing.md`).
 - Big models in Ollama can be very slow (no MoE expert offload); this mode is best for small/medium models.
 
 ## 2. Performance mode: llama.cpp + anthropic-proxy
@@ -85,14 +86,14 @@ Use when the user wants a responsive coding agent.
 
 ```bash
 llama-server -m <model.gguf> \
-  --n-cpu-moe 24 -ngl 999 \
-  -c 32768 -fa on -ctk q8_0 -ctv q8_0 \
+  --n-cpu-moe 30 -ngl 999 \
+  -c 131072 -fa on -ctk q8_0 -ctv q8_0 \
   --load-mode none -t 16 --parallel 1 \
   --reasoning-budget 0 --spec-type draft-mtp \
   --host 127.0.0.1 --port 8081 --jinja -a qwen
 ```
 
-- Adjust `--n-cpu-moe` to the VRAM; see `backends.md`.
+- `-c` and `--n-cpu-moe` are a pair, not independent knobs: size the context first (`context-sizing.md`), then offload enough experts to fit it. The numbers above are the measured 12GB/35B-A3B pair (128K, ~52 tok/s); do not copy them to a different model or VRAM size.
 - Confirm `http://127.0.0.1:8081/health` returns ok and `/v1/models` shows the alias (`qwen`).
 - A CUDA/Metal build is required; a CPU-only build will ignore `-ngl`.
 
@@ -208,6 +209,7 @@ When several Ollama models are installed, generate a registry and one wrapper pe
 - Scan `GET http://127.0.0.1:11434/api/tags`; resolve each model's GGUF/mmproj/draft from the Ollama manifest by layer mediaType (`application/vnd.ollama.image.model`, `.projector`, `.draft`). Do not infer the projector from FROM order.
 - Write a registry (tag, command, blobs, profile, capabilities) and per-model settings JSON.
 - Generate `claude-local-<slug>` wrappers. The wrapper runs the dispatcher with `-Prepare`, then `claude --settings <per-model-settings> --model <full-tag> %*`; keep the final call in the `.cmd` so `-p`, `--resume`, `--version` pass through unchanged.
+- Store context and offload per model profile (`-c`, `--n-cpu-moe`) and generate the per-model settings file from the same number, so `-c` and `CLAUDE_CODE_AUTO_COMPACT_WINDOW` cannot drift. Reuse detection that only compares the model path and alias will silently keep an old `-c`; compare the full argument list, or require an explicit restart after `-Refresh`.
 - Only one large model can be resident on a 12GB card. The dispatcher stops the previous llama-server/proxy and starts the target on the same ports (8081; public 8787 for the sanitizer; internal 8788 for anthropic-proxy) with a fixed upstream alias (`-a local`). The proxy's `DEFAULT_MODEL=local`, visible IDs/names = full Ollama tag, `FORCE_MODEL=1`.
 - Reuse a running server only if its command line contains the target main blob and `-a local`, and `/v1/models` returns the target tag. Otherwise switch.
 - Detect active local Claude Code sessions (command line contains the per-model settings path); abort unless `-Force`.
@@ -217,7 +219,7 @@ When several Ollama models are installed, generate a registry and one wrapper pe
 
 ## 4. Context, tools, permissions
 
-- Claude Code's system prompt + tool definitions ~20K tokens. Use 32K context; 4K default fails.
+- Claude Code's system prompt + tool definitions ~20K tokens. 32K is the floor, 4K fails, and anything below ~110K defeats auto-compaction (see §0). Size with `context-sizing.md`; 128K is the practical target for agent work.
 - Tool calling: Qwen3.6, Gemma 4, gpt-oss:20b support native tools. TranslateGemma is not a coding/tool model.
 - `TOOL_FORMAT=native` first; switch to `xml` only if tool calls fail.
 - Do not use `--dangerously-skip-permissions` as a default. It removes approval gates for arbitrary shell commands.

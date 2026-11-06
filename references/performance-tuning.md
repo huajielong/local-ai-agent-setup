@@ -36,7 +36,7 @@ Goal: get the best generation speed and first-token latency for Claude Code on *
 
 ## 2. Backend and offload
 
-- **llama.cpp**: prefer full GPU when the model fits. For MoE on tight VRAM, use `--n-cpu-moe` so attention/shared weights stay on GPU and experts live in RAM. Use `-fa on`, `-ctk/-ctv q8_0`, 32K context for Claude Code, `--parallel 1` for a single user. Enable MTP/draft only when the model supports it and measure acceptance.
+- **llama.cpp**: prefer full GPU when the model fits. For MoE on tight VRAM, use `--n-cpu-moe` so attention/shared weights stay on GPU and experts live in RAM. Use `-fa on`, `-ctk/-ctv q8_0`, a context sized to the KV budget (32K is the floor; see `context-sizing.md`), `--parallel 1` for a single user. Enable MTP/draft only when the model supports it and measure acceptance.
 - **Ollama**: set context via `OLLAMA_CONTEXT_LENGTH`, enable flash attention/KV quantization; some versions lack MoE expert offload, so large MoE models are usually faster in llama.cpp.
 - **LM Studio**: GUI path; check bundled llama.cpp version, GPU layers, and MoE offload.
 - **vLLM / SGLang**: team/multi-GPU path; use `--tensor-parallel-size`, `--gpu-memory-utilization`, and max model length. Put LiteLLM in front for Anthropic-compatible `/v1/messages` and per-user keys; measure concurrent throughput, not single-stream speed.
@@ -51,7 +51,7 @@ Goal: get the best generation speed and first-token latency for Claude Code on *
 ## 4. Model, quant, context
 
 - Q4_K_M is the usual sweet spot; Q2/IQ2 hurts tool calling and long-context reliability; Q8 is rarely worth the size/speed cost.
-- Use 32K context for Claude Code (system prompt + tools ~20K tokens); translation can stay at 2K. q8_0 KV cache saves VRAM.
+- Context is the second tuning lever after offload, not a constant: compute KV/token, take the largest rung with ≥1GB VRAM free, then derive the auto-compact window (`context-sizing.md`). 32K is the floor for Claude Code; translation can stay at 2K. q8_0 KV cache saves VRAM; `-ctv q4_0` saves another ~25% at little cost.
 - Dense models are simpler and often higher quality per parameter; MoE models are faster when partially offloaded. Pick for the use case, not parameter count.
 - Verify tool calling: the model must advertise `tools` and pass a simple tool-call test; translation-only/embedding models are not Claude-Code models.
 - Prompt processing matters as much as generation: a 20K system prompt at 60 tok/s prompt processing is a 5-minute wait. Prefer high prompt throughput and MTP/prefix caching where supported.
@@ -74,7 +74,7 @@ Goal: get the best generation speed and first-token latency for Claude Code on *
 
 ## 7. Expected ranges (examples, not guarantees)
 
-Use `references/model-matrix.md` for the model/VRAM tiers. Measured numbers depend on vendor power mode, CPU, GPU, context, quant, and prompt. Example: Qwen3.6-35B-A3B Q4 on a 12GB RTX 5070 Ti laptop + i7-14650HX with `--n-cpu-moe 24`, MTP, 32K context, `-t 8` + P-core affinity, vendor Performance mode: ~61–67 tok/s generation on a 300-character creative prompt; ~77–104 on a 128-token quicksort prompt; ~1258 tok/s prompt processing on a 3K prompt. In vendor Quiet mode the same setup drops to ~18–30 tok/s. Treat these as a data point, not a promise.
+Use `references/model-matrix.md` for the model/VRAM tiers. Measured numbers depend on vendor power mode, CPU, GPU, context, quant, and prompt. Example: Qwen3.6-35B-A3B Q4 on a 12GB RTX 5070 Ti laptop + i7-14650HX with `--n-cpu-moe 24`, MTP, 32K context, `-t 8` + P-core affinity, vendor Performance mode: ~61–67 tok/s generation on a 300-character creative prompt; ~77–104 on a 128-token quicksort prompt; ~1258 tok/s prompt processing on a 3K prompt. In vendor Quiet mode the same setup drops to ~18–30 tok/s. At 128K context with `--n-cpu-moe 30`, the same machine measured ~52 tok/s generation, ~1000–1100 tok/s prompt processing, and 9.7GB VRAM — 4× the context for ~40% of the generation speed. Treat these as a data point, not a promise.
 
 ## 8. Case study: 12GB RTX 5070 Ti laptop (2026-11-06)
 
