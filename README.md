@@ -1,44 +1,28 @@
-<div align="center">
-
 # local-ai-agent-setup
 
-**先读硬件，再选模型，最后才谈参数。**
+检测本机硬件，选一个真正跑得动的本地模型与推理后端，生成 `claude-local` 接入 Claude Code；下载和安装前先给方案。
 
-一个面向 [Claude Code](https://claude.com/claude-code) 的跨平台技能：检测本机硬件，选择真正能跑起来的本地模型与推理后端，生成 `claude-local` 接入，并在下载/安装前给出可确认的部署方案。
-
-A cross-platform Claude Code skill that detects your hardware, picks a local LLM stack you can actually run, generates a `claude-local` wrapper, and produces a confirmation-gated setup plan.
-
-[![Version](https://img.shields.io/badge/version-0.3.1-blue?style=flat-square)](https://github.com/huajielong/local-ai-agent-setup/releases/tag/v0.3.1)
-[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey?style=flat-square)](#模型选择与平台)
-
-[它解决什么问题](#它解决什么问题) • [适合谁](#适合谁) • [安装](#安装) • [快速开始](#快速开始) • [模型选择](#模型选择与平台) • [性能调优](#性能调优) • [评测](#评测与验证)
-
-</div>
-
-> **状态：活跃维护** · v0.3.1 · 2026-11-06 · 这不是 Anthropic 官方项目。
+**状态**：活跃维护 · v0.3.1 · MIT · 非 Anthropic 官方项目。
 
 ## 它解决什么问题
 
-本地模型教程常常从“下载 30B 模型”开始，却不问显存、内存、磁盘、用途和供电模式。结果是要么跑不起来，要么能跑但慢到没法用。
+本地模型教程常常从“下载 30B 模型”开始，却不问显存、内存、磁盘、用途和供电模式。结果要么跑不起来，要么能跑但慢到没法用。
 
 这个技能反过来：先读硬件，再按档位和用途选型，最后才谈模型参数。
 
-- **8GB 显存**：9B/12B dense Q4，明确不承诺 35B；提到 30B/35B-A3B 时会说明它只是实验方案。
-- **12GB 显存 + 64GB 内存**：Qwen3.6-35B-A3B 通过 llama.cpp `--n-cpu-moe` 把专家放内存；可跑 Claude Code。
+- **8GB 显存**：9B/12B dense Q4；提到 30B/35B-A3B 时明确它只是实验方案，不承诺可用。
+- **12GB 显存 + 64GB 内存**：Qwen3.6-35B-A3B 通过 llama.cpp `--n-cpu-moe` 把专家放内存，可跑 Claude Code。
 - **24GB+ / 多卡工作站**：27B dense 或 35B-A3B 全 GPU；团队场景用 vLLM/SGLang + LiteLLM。
 - **Apple Silicon**：Ollama/MLX/LM Studio，按统一内存选 9B/12B/35B-A3B。
 - **无 GPU**：1–4B CPU 模型，明确能力边界，不承诺 Claude-Code 级 agent。
 
 ## 适合谁
 
-**适合**：有本地 GPU / Apple Silicon，想用 Claude Code 接本地模型；需要在多台电脑、不同显卡或工作站上复用同一套检测/选型/调优流程；需要团队本地推理方案。
+**适合**：有本地 GPU 或 Apple Silicon、想用 Claude Code 接本地模型；需要在多台机器、不同显卡或工作站上复用同一套检测/选型/调优流程；需要团队本地推理方案。
 
 **不适合**：只想用云端 API；做 CUDA/ROCm 内核开发；纯提示词工程；不愿意在下载/安装前确认。
 
 ## 安装
-
-### 方式 A：克隆到 Claude Code 技能目录
 
 macOS / Linux：
 
@@ -54,15 +38,12 @@ git clone https://github.com/huajielong/local-ai-agent-setup.git `
   "$env:USERPROFILE\.claude\skills\local-ai-agent-setup"
 ```
 
-### 方式 B：安装 `.skill` 包
-
-从 [v0.3.1 Release](https://github.com/huajielong/local-ai-agent-setup/releases/tag/v0.3.1) 下载 `local-ai-agent-setup-v0.3.1.skill`，按 Claude Code 的技能安装方式导入。
+或者从 [v0.3.1 Release](https://github.com/huajielong/local-ai-agent-setup/releases/tag/v0.3.1) 下载 `local-ai-agent-setup-v0.3.1.skill`，按 Claude Code 的技能安装方式导入。
 
 > [!IMPORTANT]
 > 如果 `~/.claude/settings.json` 的 `env` 已指向在线模型（例如 DeepSeek），shell 里的 `ANTHROPIC_BASE_URL` 会被覆盖。技能会生成独立 settings 文件并用 `claude --settings` 启动，不要只 `export`。
 
-> [!NOTE]
-> v0.3.1 处理 Claude Code 2.1.x 的中途 `system` 消息：Qwen/llama.cpp 的 Jinja 模板会报 `System message must be at the beginning`。本地启动器现在内置 `chat-sanitizer`（客户端 8787 → 代理 8788），转发前自动把这些消息并入顶层 system。
+## 第一次使用
 
 安装后在 Claude Code 里直接说：
 
@@ -75,7 +56,7 @@ git clone https://github.com/huajielong/local-ai-agent-setup.git `
 
 技能应自动触发；如果没有，确认技能目录在 `~/.claude/skills/` 下，并重启 Claude Code。
 
-## 快速开始
+触发后它会：只读检测硬件 → 分档并选模型/后端 → 给出含下载量、速度预期和风险的方案 → 你确认后才下载/安装 → 生成入口并跑一次真实请求验证。普通 `claude` 不受影响。
 
 生成后的入口通常长这样（具体名称取决于本机安装的 Ollama 模型）：
 
@@ -98,10 +79,11 @@ claude-local-qwen3.6         qwen3.6:35b-a3b-mtp-q4_K_M                    qwen-
 Active: qwen3.6:35b-a3b-mtp-q4_K_M (llama PID 31356, proxy PID 38696)
 ```
 
-- 普通 `claude` 不受影响，仍然走原来的在线配置。
-- `claude-local` 通过独立 `--settings` 指向本地代理，不会把全局配置改掉。
+- `claude-local` 通过独立 `--settings` 指向本地代理，不会改掉全局配置。
 - 12GB 显存一次只常驻一个模型；启动另一个入口会停掉之前的 llama-server/proxy。
 - 有活跃本地会话时，切换默认中止；先执行 `claude-local-models -Switch <tag> -Force` 强制切换，再运行目标入口。
+
+**v0.3.1 修复**：Claude Code 2.1.x 可能发送中途 `system` 消息，Qwen/llama.cpp 的 Jinja 模板会报 `System message must be at the beginning`。本地启动器内置 `chat-sanitizer`（客户端 8787 → 代理 8788），转发前自动把这些消息并入顶层 system。
 
 ## 核心能力
 
@@ -113,16 +95,6 @@ Active: qwen3.6:35b-a3b-mtp-q4_K_M (llama PID 31356, proxy PID 38696)
 - **性能调优**：电源/厂商模式、offload、CPU 亲和性、量化/上下文；完整清单见 [`references/performance-tuning.md`](references/performance-tuning.md)。
 - **团队/多用户/工作站**：vLLM/SGLang 连续批处理、Tensor Parallel、LiteLLM 虚拟密钥/配额/审计、SSH 隧道/VPN、仅绑 `127.0.0.1`。
 - **安全门控**：下载/安装前必须确认；服务只绑 localhost；不默认 `--dangerously-skip-permissions`；尊重模型许可证，不打包权重。
-
-## 工作流
-
-1. **检测硬件**：只读脚本读取 OS/CPU/RAM/磁盘/GPU/工具。
-2. **分类**：按 VRAM、RAM、用途、单用户/团队分档。
-3. **选模型和后端**：质量、显存、速度、工具调用、上下文、许可证综合权衡。
-4. **接入 Claude Code**：生成 `claude-local`、独立 settings、必要时启动 llama.cpp + anthropic-proxy。
-5. **出方案并确认**：下载/安装前给出模型、后端、显存预算、速度和风险。
-6. **执行并验证**：健康检查、真实请求、工具调用、普通 `claude` 不受影响。
-7. **调优**：电源/厂商模式 → offload → CPU 亲和性 → 量化/上下文 → 至少 3 次基准。
 
 ## 模型选择与平台
 
@@ -171,15 +143,11 @@ Active: qwen3.6:35b-a3b-mtp-q4_K_M (llama PID 31356, proxy PID 38696)
 
 ## 评测与验证
 
-触发率评测（v0.1，14 条查询 × 3 轮，原始数据见 [`evals/trigger_final_3runs.md`](evals/trigger_final_3runs.md)）：
+触发率评测（v0.1，14 条查询 × 3 轮，原始数据见 [`evals/trigger_final_3runs.md`](evals/trigger_final_3runs.md)）：正例 8 条 **24/24 次触发**，负例 6 条 **0/18 次触发**，查询级 **14/14 通过**。
 
-- 正例 8 条：**24/24 次触发**
-- 负例 6 条：**0/18 次触发**
-- 查询级：**14/14 通过**
+功能评测：v0.1 做过 28/28 断言测试，但原始运行日志没有保留，因此这里不引用耗时/token 数字；v0.2/v0.3 未重新跑完整功能评测。当前以真实安装、真实请求和工具调用验证为准。
 
-功能评测：v0.1 做过断言测试，但原始运行日志没有保留，因此这里不引用耗时/token 数字；v0.2/v0.3 未重新跑完整功能评测。当前以真实安装、真实请求和工具调用验证为准。
-
-本地 skill-evaluator 评估（2026-11-06）：**91/100，安全门禁通过**。评分维度和报告见 [`evals/skill-evaluator-2026-11-06.md`](evals/skill-evaluator-2026-11-06.md)。这是本地主观评估，不是官方认证。
+本地 skill-evaluator 评估（2026-11-06，针对 v0.3.0）：**91/100，安全门禁通过**。评分维度和报告见 [`evals/skill-evaluator-2026-11-06.md`](evals/skill-evaluator-2026-11-06.md)。这是本地主观评估，不是官方认证；v0.3.1 后未重新评分。
 
 ## 安全提示
 
