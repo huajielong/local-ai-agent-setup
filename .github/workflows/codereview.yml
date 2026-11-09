@@ -112,6 +112,7 @@ jobs:
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
           OPENAI_MAX_TOKENS: "16384"
+          OPENAI_TIMEOUT: "300"
           COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
           COHERE_EMBED_MODEL: ${{ secrets.COHERE_EMBED_MODEL }}
           LOG_LEVEL: "INFO"
