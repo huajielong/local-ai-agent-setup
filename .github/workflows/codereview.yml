@@ -55,7 +55,7 @@ jobs:
           COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
           COHERE_EMBED_MODEL: ${{ secrets.COHERE_EMBED_MODEL }}
           REVIEW_DRY_RUN: "false"
-          REVIEW_CONTEXT_ENABLED: "false"
+          REVIEW_CONTEXT_ENABLED: "true"
           REVIEW_POLICY_ENABLED: "true"
           REVIEW_POLICY_PATH: ".codereview/policies/security.json"
           REVIEW_PROMPT_DIR: ".codereview/prompts"
