@@ -5,15 +5,21 @@
 #   OPENAI_API_KEY
 #   OPENAI_BASE_URL
 #   OPENAI_MODEL
-# Optional (only when REVIEW_CONTEXT_ENABLED=true):
+# Context retrieval also needs:
 #   COHERE_API_KEY
 #   COHERE_EMBED_MODEL
 #
 # Policy:
 #   - PR review posts COMMENT reviews with inline comments.
+#   - Draft PRs are reviewed; ready_for_review reuses the cached result unless
+#     the head SHA changed.
+#   - Docs-only PRs still run this job (so the required `review` check reports
+#     success) but skip the LLM step. Do not use `paths-ignore`: a skipped
+#     required check leaves the PR unmergeable.
+#   - Review state (SQLite + history) is cached across runs so embeddings are
+#     not recomputed and historical findings accumulate.
 #   - push to main is audited only for direct pushes (merge commits are skipped);
 #     high findings fail the push-audit job as a post-merge alert.
-#   - Branch protection should require the `review` check before merging.
 name: AI code review
 
 on:
@@ -28,9 +34,13 @@ permissions:
 
 jobs:
   review:
-    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
+    concurrency:
+      # A newer push to the same PR cancels the stale run.
+      group: codereview-pr-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     steps:
       - name: Checkout agent source
         uses: actions/checkout@v4
@@ -51,7 +61,46 @@ jobs:
           python -m pip install -r .codereview/requirements.txt
           python -m pip install -e .codereview
 
+      - name: Detect docs-only pull request
+        id: scope
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          changed=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].filename')
+          docs_only=true
+          if [ -z "$changed" ]; then
+            # No files reported: do not skip; let the review path decide.
+            docs_only=false
+          else
+            while IFS= read -r file; do
+              [ -z "$file" ] && continue
+              case "$file" in
+                *.md|*.mdx|*.rst|docs/*|doc/*|*.png|*.jpg|*.jpeg|*.gif|*.svg) ;;
+                *) docs_only=false; break ;;
+              esac
+            done <<< "$changed"
+          fi
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          if [ "$docs_only" = "true" ]; then
+            echo "Docs-only PR: skipping the AI review step (the check still reports success)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Restore review state
+        if: steps.scope.outputs.docs_only != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/codereview.db*
+            data/history.jsonl
+          key: codereview-state-${{ github.repository }}-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            codereview-state-${{ github.repository }}-${{ github.job }}-
+
       - name: Review PR
+        if: steps.scope.outputs.docs_only != 'true'
         env:
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -62,29 +111,51 @@ jobs:
           OPENAI_MAX_TOKENS: "16384"
           COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
           COHERE_EMBED_MODEL: ${{ secrets.COHERE_EMBED_MODEL }}
+          REVIEW_MODE: "ensemble"
           REVIEW_DRY_RUN: "false"
+          REVIEW_DRAFTS: "true"
           REVIEW_CONTEXT_ENABLED: "true"
+          REVIEW_DEPENDENCY_ENABLED: "true"
+          REVIEW_HISTORY_ENABLED: "true"
+          REVIEW_POST_EMPTY_SUMMARY: "true"
+          REVIEW_POST_ON_PARTIAL: "false"
           REVIEW_POLICY_ENABLED: "true"
           REVIEW_POLICY_PATH: ".codereview/policies/security.json"
           REVIEW_PROMPT_DIR: ".codereview/prompts"
           DATABASE_PATH: "data/codereview.db"
+          REVIEW_HISTORY_PATH: "data/history.jsonl"
           CHROMA_PATH: "data/chroma"
           CACHE_DIR: "data/cache"
           REVIEW_AUDIT_PATH: "data/audit.jsonl"
         run: |
+          mkdir -p data
+          touch data/history.jsonl
           python -I -X utf8 -m codereview.cli \
             --repo "$REPO" \
             --pr "$PR_NUMBER" \
-            --mode security \
             --post
+
+      - name: Save review state
+        if: always() && steps.scope.outputs.docs_only != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/codereview.db*
+            data/history.jsonl
+          key: codereview-state-${{ github.repository }}-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
 
   push-audit:
     # Direct pushes only. PR merge commits were already reviewed on the PR.
+    # Branch protection normally blocks direct pushes; this remains a
+    # post-bypass alert, so it stays lean (no context/history/dependency).
     if: >-
       github.event_name == 'push' &&
       !startsWith(github.event.head_commit.message, 'Merge pull request')
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    concurrency:
+      group: codereview-push-${{ github.ref }}
+      cancel-in-progress: false
     permissions:
       contents: read
     steps:
@@ -119,8 +190,11 @@ jobs:
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
           OPENAI_MAX_TOKENS: "16384"
+          REVIEW_MODE: "security"
           REVIEW_DRY_RUN: "true"
           REVIEW_CONTEXT_ENABLED: "false"
+          REVIEW_DEPENDENCY_ENABLED: "false"
+          REVIEW_HISTORY_ENABLED: "false"
           REVIEW_POLICY_ENABLED: "true"
           REVIEW_POLICY_PATH: ".codereview/policies/security.json"
           REVIEW_PROMPT_DIR: ".codereview/prompts"
