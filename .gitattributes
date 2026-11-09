@@ -1,0 +1,5 @@
+# Keep POSIX shell scripts and the Git Bash shim templates LF in every checkout.
+*.sh text eol=lf
+*.py text eol=lf
+assets/claude-local.sh.tmpl text eol=lf
+assets/claude-local.windows-bash.tmpl text eol=lf

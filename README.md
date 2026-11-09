@@ -2,7 +2,7 @@
 
 检测本机硬件，选一个真正跑得动的本地模型与推理后端，生成 `claude-local` 接入 Claude Code；下载和安装前先给方案。
 
-**状态**：活跃维护 · v0.3.1 · MIT · 非 Anthropic 官方项目。
+**状态**：活跃维护 · v0.4.2 · MIT · 非 Anthropic 官方项目。
 
 ## 它解决什么问题
 
@@ -38,7 +38,7 @@ git clone https://github.com/huajielong/local-ai-agent-setup.git `
   "$env:USERPROFILE\.claude\skills\local-ai-agent-setup"
 ```
 
-或者从 [v0.3.1 Release](https://github.com/huajielong/local-ai-agent-setup/releases/tag/v0.3.1) 下载 `local-ai-agent-setup-v0.3.1.skill`，按 Claude Code 的技能安装方式导入。
+或者从 [v0.4.2 Release](https://github.com/huajielong/local-ai-agent-setup/releases/tag/v0.4.2) 下载 `local-ai-agent-setup-v0.4.2.skill`，按 Claude Code 的技能安装方式导入。
 
 > [!IMPORTANT]
 > 如果 `~/.claude/settings.json` 的 `env` 已指向在线模型（例如 DeepSeek），shell 里的 `ANTHROPIC_BASE_URL` 会被覆盖。技能会生成独立 settings 文件并用 `claude --settings` 启动，不要只 `export`。
@@ -87,14 +87,18 @@ Active: qwen3.6:35b-a3b-mtp-q4_K_M (llama PID 31356, proxy PID 38696)
 
 **v0.4.0 变更**：上下文不再写死 32K。按模型 KV 开销和显存预算选出上下文，再由它反推自动压缩窗口。Claude Code 会把 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` 抬到至少 100000，所以服务端上下文低于约 110K 时自动压缩永远不会触发——要么把上下文做到 128K+，要么手动 `/compact`。详见 [`references/context-sizing.md`](references/context-sizing.md)。
 
+**v0.4.1 变更**：`CLAUDE_CODE_AUTO_COMPACT_WINDOW` 改为**按模型条件生成**：只有该模型的服务端上下文撑得起（≥100000 且留出约 20K 系统提示余量）才写入，否则从该模型的 settings 中整体省略。32K/96K 入口不再每次启动打印 25000 低于下限的警告，也不会把 100000 写到撑不下的模型上。每个 `claude-local-<model>` 都按自己的上下文档位计算，互不共用。
+
+**v0.4.2 变更**：Windows 下每个 `claude-local-<model>` 要求生成**两份入口**：`.cmd`（PowerShell/cmd）和 `~/bin` 下的无扩展名 bash shim（Git Bash/MSYS）。MSYS 不会替裸命令补 `.cmd`，只有 `.cmd` 时 Git Bash 会报 `command not found`；技能新增模板与三终端验证清单。
+
 ## 核心能力
 
 - **只读硬件检测**：Windows PowerShell / macOS-Linux bash 脚本，读取 OS、CPU、RAM、磁盘、GPU/VRAM、已装工具和 Ollama 模型。
 - **模型矩阵**：Qwen3.6-35B-A3B、Qwen3.8-27B、Gemma 4 12B/26B-A4B、TranslateGemma 4B、Qwen3.5-9B/4B、gpt-oss:20b 等，含大小、许可证、适用档位和预期速度。
 - **后端选择**：Ollama、llama.cpp、LM Studio、MLX、vLLM、SGLang；单用户和团队并发有明确分支。
 - **Claude Code 接入**：Ollama 原生 Anthropic API、llama.cpp + anthropic-proxy、vLLM/SGLang + LiteLLM；生成 `claude-local` 包装脚本，用 `--settings` 隔离配置，不修改正常 `claude`。
-- **多模型入口**：按 Ollama 已安装模型生成 `claude-local-<name>`，单 GPU 单模型常驻切换，管理命令 `claude-local-models -List/-Refresh/-Stop/-Switch`。
-- **上下文预算**：按 GGUF 的层数/ KV 头/head dim 算出每 token 的 KV 开销，再按显存选 32K→256K 档位，并由上下文反推 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`；附 `scripts/gguf-kv-budget.py` 直接算。见 [`references/context-sizing.md`](references/context-sizing.md)。
+- **多模型入口**：按 Ollama 已安装模型生成 `claude-local-<name>`（Windows 同时生成 `.cmd` 与 Git Bash 无扩展名 shim），单 GPU 单模型常驻切换，管理命令 `claude-local-models -List/-Refresh/-Stop/-Switch`。
+- **上下文预算**：按 GGUF 的层数/ KV 头/head dim 算出每 token 的 KV 开销，再按显存选 32K→256K 档位，并由上下文反推 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`（撑不起时省略该键，每个模型独立计算）；附 `scripts/gguf-kv-budget.py` 直接算。见 [`references/context-sizing.md`](references/context-sizing.md)。
 - **性能调优**：电源/厂商模式、offload、CPU 亲和性、量化/上下文；完整清单见 [`references/performance-tuning.md`](references/performance-tuning.md)。
 - **团队/多用户/工作站**：vLLM/SGLang 连续批处理、Tensor Parallel、LiteLLM 虚拟密钥/配额/审计、SSH 隧道/VPN、仅绑 `127.0.0.1`。
 - **安全门控**：下载/安装前必须确认；服务只绑 localhost；不默认 `--dangerously-skip-permissions`；尊重模型许可证，不打包权重。

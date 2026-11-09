@@ -16,13 +16,20 @@ Do not hardcode 32K. Derive the context from the model's KV footprint and the ma
 |---|---|---|
 | Native max context | model metadata (`ollama show <tag>` → context length; GGUF `*.context_length`) | hard ceiling; asking for more is silently capped |
 | Server context | llama.cpp `-c` / Ollama `OLLAMA_CONTEXT_LENGTH` / vLLM `--max-model-len` | what the server actually allocates |
-| `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | the `env` block of the `--settings` JSON | when Claude Code decides to compact |
+| `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | the `env` block of that model's `--settings` JSON | when Claude Code decides to compact |
 
 Rule: `auto_compact < server_ctx <= native_max`.
 
 The classic failure is `auto_compact = 100000` copied from a cloud model while `server_ctx = 32768`: compaction never fires, and by the time it would, the request is already over the limit.
 
-**Claude Code clamps `CLAUDE_CODE_AUTO_COMPACT_WINDOW` to a floor of 100000** (it emits a warning when you ask for less). Consequence: on a server context below ~110K, auto-compaction cannot fire no matter what you set. Either size the context to at least 128K, or accept manual `/compact` at ~50–60% of the context. There is no settings-file workaround.
+**Claude Code clamps `CLAUDE_CODE_AUTO_COMPACT_WINDOW` to a floor of 100000 and prints a startup warning for smaller values.** So a per-model settings file has only two valid states:
+
+| Server context | Settings file |
+|---|---|
+| 128K rung and above | write `CLAUDE_CODE_AUTO_COMPACT_WINDOW` = the window derived in §4 |
+| below the 128K rung | **omit the variable entirely** — never write 25000 for a 32K model, and never write 100000 "to silence it" |
+
+You cannot make auto-compaction fire on a short-context model; the variable only tells Claude Code when to try. Writing a sub-floor value changes nothing except adding a warning to every launch, and writing 100000 on a 32K server puts the window above the model's context and hides the real limit. Omitting the key is the correct, warning-free configuration; plan on manual `/compact` at ~50–60% of the context.
 
 ## 2. Compute the KV cache per token
 
@@ -79,21 +86,31 @@ Four times the context for ~40% of the generation speed is usually the right tra
 
 Use a ladder — 32K → 64K → 96K → 128K → 192K → 256K — capped at the native maximum. Take the largest rung that leaves **at least 1 GB free while serving a real long request**, not right after load.
 
-Then, once `server_ctx >= 128K`:
+Then derive the auto-compact window from **that model's** server context:
 
 ```text
-CLAUDE_CODE_AUTO_COMPACT_WINDOW = round_down(server_ctx × 0.76, 1000)
+candidate = max(100000, round_down(server_ctx × 0.76, 1000))
+fits      = server_ctx >= 131072 and candidate + 20000 <= server_ctx
+            # 128K rung or above, plus room for system prompt + tool schemas
+
+if fits:  CLAUDE_CODE_AUTO_COMPACT_WINDOW = candidate
+else:     omit CLAUDE_CODE_AUTO_COMPACT_WINDOW from that model's settings file
 ```
 
-Why 0.76: Claude Code starts compaction near 92% of the window, and the compaction request carries the transcript **plus** the system prompt and tool schemas, so anything at or above `server_ctx` cannot work.
+Why 0.76: Claude Code starts compaction near 92% of the window, and the compaction request carries the transcript **plus** the ~20K system prompt and tool schemas, so anything at or above `server_ctx` cannot work.
 
-| Server context | Auto-compact window |
-|---|---|
-| 128K | 100000 |
-| 192K | 146000 |
-| 256K | 195000 |
+| Server context | Auto-compact window | Settings file |
+|---|---|---|
+| 32K (32768) | — | omit the key; manual `/compact` |
+| 64K (65536) | — | omit |
+| 96K (98304) | — | omit |
+| 128K (131072) | 100000 | write `"100000"` |
+| 192K (196608) | 149000 | write `"149000"` |
+| 256K (262144) | 199000 | write `"199000"` |
 
-Below 128K the floor of 100000 applies (see §1) — do not pretend a smaller window fixes it.
+Below the 128K rung the floor of 100000 applies (see §1): do not pretend a smaller window fixes it, and do not write the value at all.
+
+**One context and one window per model, not per machine.** A multi-model launcher (`claude-local-<model>` per installed model) must derive both from that model's registry entry. Sharing one `CLAUDE_CODE_AUTO_COMPACT_WINDOW` across a 128K Qwen and a 32K Gemma gives one model a window larger than its server context and the other a startup warning. Store `ctx` per model in the registry, generate `-c` and the settings `env` from it, and apply the rule above per model — when it returns "omit", the key must be absent from that model's settings JSON.
 
 ## 5. Starting points by tier
 
@@ -120,11 +137,13 @@ nvidia-smi --query-gpu=memory.used,memory.free --format=csv,noheader
 - Free VRAM ≥ 1 GB.
 - Send one request **larger than the old limit** (a ~40K-token filler is enough) and confirm HTTP 200 plus a plausible `usage.input_tokens`; an error only shows up past the boundary.
 - In Claude Code, run a long session and confirm `/compact` succeeds rather than returning the same context error.
+- For a short-context model, confirm its settings JSON has **no** `CLAUDE_CODE_AUTO_COMPACT_WINDOW` key and that launching `claude-local-<model>` prints no ⚠ auto-compact warning.
 
 ## 7. Traps
 
 - `OLLAMA_CONTEXT_LENGTH` does nothing when you run `llama-server` directly. Setting it and seeing no change is expected, not a bug in Ollama.
 - Launchers often reuse an already-healthy server without comparing flags. Changing `-c` and restarting the wrapper can leave the old server running; stop first, then start, then check `/props`.
 - A model's advertised 256K is a ceiling, not a budget.
-- Auto-compact window ≥ server context is always a bug, and Claude Code's 100000 floor makes it the default bug on small-context models.
+- Auto-compact window ≥ server context is always a bug, and Claude Code's 100000 floor makes it the default bug on small-context models. The fix is not a smaller value — anything below 100000 is clamped and warned about — it is to omit the key entirely.
+- A settings generator that always writes the template key drifts into emitting 25000 on a 32K profile: no behavior change, but a warning at every launch. Generate the key conditionally from the rule in §4.
 - Prefix caching makes long contexts usable turn-to-turn, but the first request after startup or compaction pays full prompt processing: at ~1000 tok/s, 128K is about two minutes.

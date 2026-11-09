@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.4.2 — 2026-11-09
+
+- Windows wrappers are now generated as a **pair per command**: `<name>.cmd` for PowerShell/cmd and an extensionless `<name>` bash shim for Git Bash/MSYS. MSYS does not append `.cmd` to bare command names, so the previous `.cmd`-only setup failed in Git Bash with `command not found` even when `~/bin` was on PATH.
+- New `assets/claude-local.windows-bash.tmpl` with the prepare step, the `--version/-v/--help/-h` skip, and `exec claude ... "$@"`.
+- SKILL.md and `references/claude-code-integration.md` now require generating both shims from the same tag/settings and verifying the bare name plus `--version` in PowerShell, cmd, and Git Bash for each `claude-local-<model>`.
+- `references/troubleshooting.md` §13 documents the PATHEXT/MSYS symptom and fix.
+- Anti-patterns: shipping only `.cmd`; implementing the bash twin as `cmd //c ... "$@"` (quoting breaks on spaces and `-p` arguments).
+
+## v0.4.1 — 2026-11-09
+
+- Per-model auto-compact windows are now generated conditionally. `CLAUDE_CODE_AUTO_COMPACT_WINDOW` is written only when the model's server context can carry the compaction request (`candidate = max(100000, round_down(ctx × 0.76, 1000))`, and `candidate + 20K <= ctx`); otherwise the key is omitted from that model's settings file. This removes the `CLAUDE_CODE_AUTO_COMPACT_WINDOW="25000" ... treats it as the 100k minimum` warning that short-context wrappers (e.g. a 32K Gemma) printed at every launch, without pretending auto-compaction works.
+- The settings template now has an optional `{{AUTO_COMPACT_SETTING}}` line, so omission is a first-class outcome. Docs state explicitly that every `claude-local-<model>` derives its own context and window from its own registry entry; models with different context rungs must not share one value.
+- `scripts/gguf-kv-budget.py` now prints the derived window for 128K+ contexts and the omit-the-key guidance below that.
+- Updated `references/context-sizing.md` (§1 two valid states, §4 decision rule and per-rung table, §6 verification, §7 traps), `references/claude-code-integration.md` (§0 rules, §3.1 multi-model generation, §4), `references/troubleshooting.md`, and SKILL.md (step 4, step 6, heuristics, anti-patterns).
+
 ## v0.4.0 — 2026-11-07
 
 - Context sizing is now derived per model instead of hardcoded at 32K. New `references/context-sizing.md`: KV-cache math, VRAM budget, a 32K→256K ladder, how much each MoE layer moved to CPU buys, and the measured 12GB trade-off (32K/`--n-cpu-moe 24` ≈ 86 tok/s vs 128K/`--n-cpu-moe 30` ≈ 52 tok/s).

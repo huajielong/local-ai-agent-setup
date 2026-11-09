@@ -51,7 +51,7 @@ Goal: get the best generation speed and first-token latency for Claude Code on *
 ## 4. Model, quant, context
 
 - Q4_K_M is the usual sweet spot; Q2/IQ2 hurts tool calling and long-context reliability; Q8 is rarely worth the size/speed cost.
-- Context is the second tuning lever after offload, not a constant: compute KV/token, take the largest rung with ≥1GB VRAM free, then derive the auto-compact window (`context-sizing.md`). 32K is the floor for Claude Code; translation can stay at 2K. q8_0 KV cache saves VRAM; `-ctv q4_0` saves another ~25% at little cost.
+- Context is the second tuning lever after offload, not a constant: compute KV/token, take the largest rung with ≥1GB VRAM free, then derive the auto-compact window — or omit the key when the rung cannot carry it — per model (`context-sizing.md`). 32K is the floor for Claude Code; translation can stay at 2K. q8_0 KV cache saves VRAM; `-ctv q4_0` saves another ~25% at little cost.
 - Dense models are simpler and often higher quality per parameter; MoE models are faster when partially offloaded. Pick for the use case, not parameter count.
 - Verify tool calling: the model must advertise `tools` and pass a simple tool-call test; translation-only/embedding models are not Claude-Code models.
 - Prompt processing matters as much as generation: a 20K system prompt at 60 tok/s prompt processing is a 5-minute wait. Prefer high prompt throughput and MTP/prefix caching where supported.

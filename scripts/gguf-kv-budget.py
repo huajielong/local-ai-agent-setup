@@ -150,8 +150,12 @@ def main():
         print("note:         too little room to grow; raise --n-cpu-moe instead -")
         print("              each extra MoE layer on CPU frees roughly main_size / block_count (0.3-0.8GB).")
     if rung < 131072:
-        print("warning:      below 128K Claude Code still clamps auto-compact to 100000,")
-        print("              so plan on manual /compact at ~50-60% of the context.")
+        print("autocompact:  omit CLAUDE_CODE_AUTO_COMPACT_WINDOW from the settings file")
+        print("              (Claude Code's floor is 100000 and below 128K the window")
+        print("              cannot fit); plan on manual /compact at ~50-60%.")
+    else:
+        window = max(100000, (rung * 76 // 100) // 1000 * 1000)
+        print("autocompact:  CLAUDE_CODE_AUTO_COMPACT_WINDOW=%d" % window)
 
 
 if __name__ == "__main__":

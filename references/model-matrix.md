@@ -53,7 +53,7 @@ Measured tok/s are per-machine examples. Tune vendor/OS power mode, backend offl
 ## 4. Context and memory
 
 - Claude Code system prompt + tool definitions ~20K tokens. 32K is the floor, not the target: budget the KV cache and take the largest rung that fits (`context-sizing.md`). 4K default is unusable.
-- Below ~110K of server context, Claude Code's 100000 auto-compact floor means compaction never fires; size to 128K+ for agent work or plan on manual `/compact`.
+- Below the 128K rung, Claude Code's 100000 auto-compact floor means compaction never fires: omit `CLAUDE_CODE_AUTO_COMPACT_WINDOW` from that model's settings, size to 128K+ for agent work, or plan on manual `/compact`.
 - Translation: 2K context is enough and saves VRAM.
 - Context is bounded by KV size, not by the model's advertised maximum. Qwen3.6-35B-A3B needs ~43.6 KB/token at q8_0, so 128K costs ~5.6GB and 256K ~11.2GB. On 12GB, 128K is reachable by moving 30 of 41 MoE layers to CPU; 256K is not.
 - One big model at a time. 12GB cannot hold Qwen (10.8GB) + Gemma (7.9GB). TTS/vision/other GPU apps compete.
