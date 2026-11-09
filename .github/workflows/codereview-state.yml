@@ -27,6 +27,11 @@ jobs:
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    concurrency:
+      # Serialize state saves; the cache is still last-writer-wins for
+      # concurrent PRs (documented limitation), but saves cannot overlap.
+      group: codereview-state
+      cancel-in-progress: false
     steps:
       - name: Download review state
         id: download
@@ -39,8 +44,35 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
 
-      - name: Save main-scoped review state
+      - name: Validate review state
+        id: validate
         if: steps.download.outcome == 'success'
+        run: |
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import sqlite3
+
+          db = pathlib.Path("data/codereview.db")
+          if not db.exists():
+              raise SystemExit("missing data/codereview.db")
+          con = sqlite3.connect(db)
+          tables = {row[0] for row in con.execute(
+              "SELECT name FROM sqlite_master WHERE type='table'"
+          )}
+          missing = {"embeddings", "chunks", "posted_reviews"} - tables
+          if missing:
+              raise SystemExit(f"missing tables: {sorted(missing)}")
+          history = pathlib.Path("data/history.jsonl")
+          if history.exists():
+              for line in history.read_text(encoding="utf-8").splitlines():
+                  if line.strip():
+                      json.loads(line)
+          print("review state validation ok")
+          PY
+
+      - name: Save main-scoped review state
+        if: steps.download.outcome == 'success' && steps.validate.outcome == 'success'
         uses: actions/cache/save@v4
         with:
           path: |
