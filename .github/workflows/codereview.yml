@@ -53,6 +53,8 @@ jobs:
 
       - name: Review PR
         env:
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
@@ -72,8 +74,8 @@ jobs:
           REVIEW_AUDIT_PATH: "data/audit.jsonl"
         run: |
           python -I -X utf8 -m codereview.cli \
-            --repo "${{ github.repository }}" \
-            --pr "${{ github.event.pull_request.number }}" \
+            --repo "$REPO" \
+            --pr "$PR_NUMBER" \
             --mode security \
             --post
 
@@ -108,6 +110,11 @@ jobs:
 
       - name: Audit push
         env:
+          REPO: ${{ github.repository }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+          PUSH_BRANCH: ${{ github.ref_name }}
+          PUSH_TITLE: ${{ github.event.head_commit.message }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
@@ -125,12 +132,12 @@ jobs:
         run: |
           set +e
           python -I -X utf8 -m codereview.cli \
-            --repo "${{ github.repository }}" \
+            --repo "$REPO" \
             --push \
-            --before "${{ github.event.before }}" \
-            --after "${{ github.event.after }}" \
-            --branch "${{ github.ref_name }}" \
-            --push-title "${{ github.event.head_commit.message }}" \
+            --before "$PUSH_BEFORE" \
+            --after "$PUSH_AFTER" \
+            --branch "$PUSH_BRANCH" \
+            --push-title "$PUSH_TITLE" \
             --fail-on-severity high \
             --json-out push-audit.json
           code=$?
