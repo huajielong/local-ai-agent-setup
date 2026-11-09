@@ -10,3 +10,7 @@ def lookup(name: str) -> str:
 
 def find_user(db, name: str) -> str:
     return db.execute(f"SELECT * FROM users WHERE name='{name}'")
+
+
+def render(user_input: str) -> str:
+    return "<div>" + user_input + "</div>"
