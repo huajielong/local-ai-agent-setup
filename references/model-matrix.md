@@ -52,16 +52,17 @@ Measured tok/s are per-machine examples. Tune vendor/OS power mode, backend offl
 
 ## 4. Context and memory
 
-- Claude Code system prompt + tool definitions ~20K tokens. Use 32K context; 4K default is unusable.
+- Claude Code system prompt + tool definitions ~20K tokens. 32K is the floor, not the target: budget the KV cache and take the largest rung that fits (`context-sizing.md`). 4K default is unusable.
+- Below the 128K rung, Claude Code's 100000 auto-compact floor means compaction never fires: omit `CLAUDE_CODE_AUTO_COMPACT_WINDOW` from that model's settings, size to 128K+ for agent work, or plan on manual `/compact`.
 - Translation: 2K context is enough and saves VRAM.
-- Longer context costs KV cache; on 12GB, 32K is the practical ceiling for Qwen3.6 + Gemma 4.
+- Context is bounded by KV size, not by the model's advertised maximum. Qwen3.6-35B-A3B needs ~43.6 KB/token at q8_0, so 128K costs ~5.6GB and 256K ~11.2GB. On 12GB, 128K is reachable by moving 30 of 41 MoE layers to CPU; 256K is not.
 - One big model at a time. 12GB cannot hold Qwen (10.8GB) + Gemma (7.9GB). TTS/vision/other GPU apps compete.
 
 ## 5. Speed expectations (rough, hardware-dependent)
 
 | Model | 12GB + 64GB (llama.cpp) | 12GB Ollama | Notes |
 |---|---|---|---|
-| Qwen3.6-35B-A3B Q4 | ~60–100 tok/s Performance / ~18–30 Quiet (n-cpu-moe 24, MTP, `-t 8` + P-core affinity) | ~6.6 tok/s | Ollama lacks MoE expert offload; vendor Quiet mode caps CPU/GPU |
+| Qwen3.6-35B-A3B Q4 | ~60–100 tok/s Performance / ~18–30 Quiet (32K, n-cpu-moe 24); ~52 tok/s at 128K (n-cpu-moe 30) | ~6.6 tok/s | Ollama lacks MoE expert offload; vendor Quiet mode caps CPU/GPU; context and offload trade directly against speed |
 | Gemma 4 12B Q4 | ~34 tok/s full GPU | ~5 tok/s | llama.cpp much faster |
 | TranslateGemma 4B | ~78 tok/s GPU / ~22 CPU | ~70–80 GPU | CPU variant 0 VRAM |
 | Qwen3.8-27B Q4 | ~5–8 tok/s (12GB offload) | ~5 tok/s | 24GB full GPU is much faster |

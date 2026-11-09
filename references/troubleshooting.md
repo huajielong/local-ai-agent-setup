@@ -35,8 +35,8 @@ Fix:
 ## 4. OOM / model won't load
 
 - Close other GPU apps: TTS, ChatGPT/Codex desktop, NVIDIA Broadcast, browsers with GPU acceleration.
-- Lower context: 32K → 16K → 8K.
-- MoE: increase `--n-cpu-moe` (more experts on CPU, less VRAM).
+- MoE: increase `--n-cpu-moe` (more experts on CPU, less VRAM) before touching context. One layer usually frees 0.3–0.8GB.
+- Only then lower context: 128K → 96K → 64K → 32K, using `context-sizing.md`.
 - Use a smaller quant or a smaller model; do not force Q8 on 12GB.
 - Only one big model at a time.
 - Windows may reserve VRAM for the desktop; leave 0.5–1GB headroom.
@@ -61,12 +61,13 @@ Fix:
 ## 7. Claude Code errors
 
 - `Invalid model name`: use `claude-sonnet-4-6` with anthropic-proxy (it maps to the local model), or the exact local model name with Ollama native mode.
-- Context errors: set 32K; 4K default is too small.
+- `400 upstream: request (N tokens) exceeds the available context size (M tokens), try increasing it`: the server was started with `-c M` and the session outgrew it. The fix is not just a bigger `-c`: raise it to the largest rung the KV budget allows, move MoE layers to CPU to pay for it, and keep `CLAUDE_CODE_AUTO_COMPACT_WINDOW` below the new value (`context-sizing.md`). Confirm with `/props`; a launcher that reuses a healthy server may still be running the old flags.
+- `/compact` fails with the same context error: the compact request contains the whole transcript, so it overflows exactly like the normal turn. Shrinking the auto-compact window cannot fix it once the transcript already exceeds the context; start a new session or raise the context.
 - Tool calls fail: switch `TOOL_FORMAT` between `native` and `xml`; test with a simple tool.
 - Headless `claude -p` hangs: permission confirmation without a TTY; use interactive mode or configure permissions.
 - `claude-local` still uses the online provider/model: `~/.claude/settings.json` (or project settings) defines an `env` block, and it wins over shell environment variables. Read the settings file and launch with `claude --settings <dedicated.json>`; `export`/`set` cannot override it. Confirm with `/status`.
 - Model ID rejected by the online API after adding `--settings`: the settings file is read but `ANTHROPIC_BASE_URL` is missing or wrong. Put the base URL and model IDs in the same file.
-- `CLAUDE_CODE_AUTO_COMPACT_WINDOW` warning: values below 100000 are clamped to 100000. Set 100000 or override the inherited value; on a 32K local model, long sessions can overflow before auto-compaction.
+- `CLAUDE_CODE_AUTO_COMPACT_WINDOW="25000" reads as 25,000 tokens, so Claude Code treats it as the 100k minimum` warning: Claude Code clamps any value below 100000 to the floor. The value itself is useless — auto-compaction cannot fire on a server context below the 128K rung anyway. Do not "fix" it by writing 100000 on a 32K model (the window would be larger than the model's context); delete the key from that model's settings file, keep `/compact` manual at ~50–60%, or raise the server context to 128K+. For a multi-model launcher, apply this per model. See `context-sizing.md` §1 and §4.
 - Claude Code shows "Sonnet 4.6" / "Opus" although requests are local: the proxy advertises built-in Claude IDs, and Claude Code renders its own label for known IDs. Set `ANTHROPIC_PROXY_DEFAULT_*_MODEL` to the local alias (for example `qwen`) and `ANTHROPIC_PROXY_DEFAULT_*_MODEL_NAME` to a local name, then launch with `--model qwen`; confirm with `/v1/models`.
 - `500 upstream: Jinja Exception: System message must be at the beginning.`: Claude Code 2.1.x inserts environment context as mid-conversation `role:"system"` messages; strict Qwen/llama.cpp templates reject them. Put a sanitizer relay in front (client 8787 -> sanitizer -> anthropic-proxy 8788) that merges mid-list system messages into the top-level `system` prompt. Replay the failed request to confirm 200; a new session alone only works until the next environment update. See `references/claude-code-integration.md` §2.4.
 - Normal `claude` starts using local proxy: environment variables leaked; prefer a `--settings` wrapper, or clear `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY`.
@@ -110,6 +111,7 @@ Escalate to a different backend or a smaller model if:
 
 - **LF-only `.bat`/`.cmd` files break cmd.exe parsing**: symptoms include fragments such as `'ude' is not recognized` or "The filename, directory name, or volume label syntax is incorrect." Save batch files with CRLF line endings and keep comments ASCII; prefer UTF-8 without BOM.
 - **A new `.cmd` is not found in an already-open PowerShell/cmd window**: the process PATH may be stale. Put the shim in a directory already on PATH (for example the npm global bin where `claude.cmd` lives), add a PowerShell profile function that calls the `.bat` by absolute path, or open a new terminal. Verify with `Get-Command <name>` / `where <name>`.
+- **Bare `claude-local-<model>` works in PowerShell but Git Bash says `command not found`**: MSYS/Git Bash does not use PATHEXT and does not append `.cmd` to bare command names, even when `~/bin` is on PATH (`command -v claude-local-gemma4.cmd` succeeds while `command -v claude-local-gemma4` fails). Generate an extensionless bash twin next to the `.cmd` in a PATH directory (`~/bin`), with LF line endings, `#!/usr/bin/env bash`, the `-Prepare` call for normal launches, the `--version/-v/--help/-h` skip, and `exec claude --settings ... --model ... "$@"`. Verify with `command -v <name>` in Git Bash and `Get-Command <name>` in PowerShell.
 - **Do not pass `/D` to `start` from Git Bash**: MSYS path conversion mangles it. Use PowerShell `Start-Process -WorkingDirectory ...`, or a `.bat` that `cd /d` to the right directory.
 - After editing a proxy `.env`, restart the proxy and re-check `/health` and `/v1/models`; do not assume the running process reloaded it.
 

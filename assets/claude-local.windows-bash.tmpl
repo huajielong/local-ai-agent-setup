@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Git Bash / MSYS twin of claude-local-<model>.cmd.
+# MSYS does not resolve a bare command name to a .cmd file on PATH, so this
+# file must exist extensionless in a directory on PATH (for example ~/bin).
+# Keep LF line endings and install it executable.
+set -u
+case "${1:-}" in
+  --version|-v|--help|-h) ;;
+  *) {{PREPARE_CMD}} || exit $? ;;
+esac
+exec claude --settings "{{SETTINGS_PATH}}" --model "{{CLAUDE_MODEL_ID}}" "$@"
