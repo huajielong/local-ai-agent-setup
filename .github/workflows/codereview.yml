@@ -1,19 +1,26 @@
 # Copy this file to .github/workflows/codereview.yml in the repository you
-# want reviewed. It checks out the private agent repo and runs the CLI.
+# want reviewed. It checks out the public agent repo and runs the CLI.
 #
 # Repository secrets required:
 #   OPENAI_API_KEY
 #   OPENAI_BASE_URL
 #   OPENAI_MODEL
-# The agent repo is public, so no cross-repo token is needed.
 # Optional (only when REVIEW_CONTEXT_ENABLED=true):
 #   COHERE_API_KEY
 #   COHERE_EMBED_MODEL
+#
+# Policy:
+#   - PR review posts COMMENT reviews with inline comments.
+#   - push to main is audited only for direct pushes (merge commits are skipped);
+#     high findings fail the push-audit job as a post-merge alert.
+#   - Branch protection should require the `review` check before merging.
 name: AI code review
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -21,7 +28,7 @@ permissions:
 
 jobs:
   review:
-    if: github.event.pull_request.draft == false
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -51,11 +58,11 @@ jobs:
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
           OPENAI_MAX_TOKENS: "16384"
-          # Uncomment both lines to enable cross-file context retrieval.
-          COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
-          COHERE_EMBED_MODEL: ${{ secrets.COHERE_EMBED_MODEL }}
+          # Enable cross-file context retrieval:
+          # COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
+          # COHERE_EMBED_MODEL: ${{ secrets.COHERE_EMBED_MODEL }}
           REVIEW_DRY_RUN: "false"
-          REVIEW_CONTEXT_ENABLED: "true"
+          REVIEW_CONTEXT_ENABLED: "false"
           REVIEW_POLICY_ENABLED: "true"
           REVIEW_POLICY_PATH: ".codereview/policies/security.json"
           REVIEW_PROMPT_DIR: ".codereview/prompts"
@@ -69,3 +76,66 @@ jobs:
             --pr "${{ github.event.pull_request.number }}" \
             --mode security \
             --post
+
+  push-audit:
+    # Direct pushes only. PR merge commits were already reviewed on the PR.
+    if: >-
+      github.event_name == 'push' &&
+      !startsWith(github.event.head_commit.message, 'Merge pull request')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout agent source
+        uses: actions/checkout@v4
+        with:
+          repository: huajielong/codereview-agent
+          path: .codereview
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: .codereview/requirements.txt
+
+      - name: Install agent
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r .codereview/requirements.txt
+          python -m pip install -e .codereview
+
+      - name: Audit push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          OPENAI_MAX_TOKENS: "16384"
+          REVIEW_DRY_RUN: "true"
+          REVIEW_CONTEXT_ENABLED: "false"
+          REVIEW_POLICY_ENABLED: "true"
+          REVIEW_POLICY_PATH: ".codereview/policies/security.json"
+          REVIEW_PROMPT_DIR: ".codereview/prompts"
+          DATABASE_PATH: "data/codereview.db"
+          CHROMA_PATH: "data/chroma"
+          CACHE_DIR: "data/cache"
+          REVIEW_AUDIT_PATH: "data/audit.jsonl"
+        run: |
+          set +e
+          python -I -X utf8 -m codereview.cli \
+            --repo "${{ github.repository }}" \
+            --push \
+            --before "${{ github.event.before }}" \
+            --after "${{ github.event.after }}" \
+            --branch "${{ github.ref_name }}" \
+            --push-title "${{ github.event.head_commit.message }}" \
+            --fail-on-severity high \
+            --json-out push-audit.json
+          code=$?
+          echo "## Push audit (exit $code)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat push-audit.json >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          exit $code
