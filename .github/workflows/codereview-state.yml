@@ -60,7 +60,7 @@ jobs:
           tables = {row[0] for row in con.execute(
               "SELECT name FROM sqlite_master WHERE type='table'"
           )}
-          missing = {"embeddings", "chunks", "posted_reviews"} - tables
+          missing = {"embeddings", "chunk_cache", "posted_reviews"} - tables
           if missing:
               raise SystemExit(f"missing tables: {sorted(missing)}")
           history = pathlib.Path("data/history.jsonl")
