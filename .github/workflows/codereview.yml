@@ -146,6 +146,17 @@ jobs:
             data/history.jsonl
           key: codereview-state-${{ github.repository }}-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
 
+      - name: Upload review state
+        if: always() && steps.scope.outputs.docs_only != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: codereview-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            data/codereview.db*
+            data/history.jsonl
+          if-no-files-found: ignore
+          retention-days: 3
+
   push-audit:
     # Direct pushes only. PR merge commits were already reviewed on the PR.
     # Branch protection normally blocks direct pushes; this remains a

@@ -1,0 +1,48 @@
+# Companion workflow for github-actions-codereview.yml.
+#
+# GitHub cache entries created by a pull_request run are scoped to that PR and
+# are not visible to sibling PRs. This workflow runs on the default branch after
+# "AI code review" finishes, downloads the PR run's SQLite/history artifact and
+# saves it under a main-scoped cache. Later PRs can restore that cache, so
+# embeddings and historical findings accumulate across PRs.
+#
+# Copy both files to .github/workflows/. This workflow only takes effect once it
+# is on the default branch.
+name: AI code review state
+
+on:
+  workflow_run:
+    workflows: ["AI code review"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  persist:
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download review state
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: codereview-state-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          path: data
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+
+      - name: Save main-scoped review state
+        if: steps.download.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/codereview.db*
+            data/history.jsonl
+          key: codereview-state-${{ github.repository }}-review-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
