@@ -113,6 +113,7 @@ jobs:
           OPENAI_MAX_TOKENS: "16384"
           COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
           COHERE_EMBED_MODEL: ${{ secrets.COHERE_EMBED_MODEL }}
+          LOG_LEVEL: "INFO"
           REVIEW_MODE: "ensemble"
           REVIEW_DRY_RUN: "false"
           REVIEW_DRAFTS: "true"
@@ -203,6 +204,7 @@ jobs:
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
           OPENAI_MAX_TOKENS: "16384"
+          LOG_LEVEL: "INFO"
           REVIEW_MODE: "security"
           REVIEW_DRY_RUN: "true"
           REVIEW_CONTEXT_ENABLED: "false"
