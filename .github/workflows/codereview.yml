@@ -69,19 +69,21 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          changed=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].filename')
-          docs_only=true
-          if [ -z "$changed" ]; then
-            # No files reported: do not skip; let the review path decide.
-            docs_only=false
+          # Fail open to a full review: never skip code because the API failed.
+          docs_only=false
+          if changed=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].filename'); then
+            if [ -n "$changed" ]; then
+              docs_only=true
+              while IFS= read -r file; do
+                [ -z "$file" ] && continue
+                case "$file" in
+                  *.md|*.mdx|*.rst|docs/*.md|docs/*.mdx|docs/*.rst|doc/*.md|doc/*.mdx|doc/*.rst|*.png|*.jpg|*.jpeg|*.gif|*.svg) ;;
+                  *) docs_only=false; break ;;
+                esac
+              done <<< "$changed"
+            fi
           else
-            while IFS= read -r file; do
-              [ -z "$file" ] && continue
-              case "$file" in
-                *.md|*.mdx|*.rst|docs/*|doc/*|*.png|*.jpg|*.jpeg|*.gif|*.svg) ;;
-                *) docs_only=false; break ;;
-              esac
-            done <<< "$changed"
+            echo "gh api failed; running the full review instead of skipping." >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
           if [ "$docs_only" = "true" ]; then
