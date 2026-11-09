@@ -46,6 +46,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: huajielong/codereview-agent
+          ref: feature/ensemble-history-dependency
           path: .codereview
 
       - name: Set up Python
